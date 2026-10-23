@@ -35,6 +35,8 @@ Users are global identities. Organizations own workspaces; workspaces own projec
 
 ## Persistence and audit conventions
 
+Persistence uses Flask-SQLAlchemy models, with Flask-Migrate/Alembic as the only schema-change path. Run `flask db upgrade` from `backend`; use batch mode for SQLite `ALTER` operations. Do not edit applied migrations.
+
 Use integer primary keys, foreign keys, unique membership pairs, and ISO 8601 dates/timestamps. Store audit timestamps in UTC. Enable SQLite foreign-key enforcement on every connection. Store schedule inputs separately from calculated dates. Store a project version and require expected-version checks for edits that can affect a schedule. Save analysis kind, input project version, parameters, summary, creator, and timestamp for reproducibility.
 
 The initial data model includes organizations, users, organization/workspace memberships, workspaces, projects, tasks, dependencies, project calendars, resources, assignments, analysis runs, and lightweight audit events. Project calendars are the first-release calendar policy; cross-project resource pooling is out of scope.
