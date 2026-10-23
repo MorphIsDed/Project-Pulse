@@ -70,3 +70,43 @@ def test_logout_requires_csrf_token(secure_app):
 
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "csrf_error"
+
+
+def test_register_requires_csrf_token(secure_public_app):
+    client = secure_public_app.test_client()
+    payload = {
+        "email": "new@example.com",
+        "password": PASSWORD,
+        "display_name": "New User",
+    }
+
+    response = client.post("/api/v1/auth/register", json=payload)
+    assert response.status_code == 400
+    assert response.get_json()["error"]["code"] == "csrf_error"
+
+    headers = csrf_headers(client)
+    response = client.post("/api/v1/auth/register", json=payload, headers=headers)
+
+    assert response.status_code == 201
+    assert response.get_json()["user"]["email"] == "new@example.com"
+
+
+def test_logout_accepts_token_returned_by_login(secure_app):
+    create_user_for(secure_app)
+    client = secure_app.test_client()
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": EMAIL, "password": PASSWORD},
+        headers=csrf_headers(client),
+    )
+    assert login_response.status_code == 200
+
+    returned_token = login_response.get_json()["csrf_token"]
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"X-CSRFToken": returned_token},
+    )
+
+    assert response.status_code == 200
+    assert client.get("/api/v1/auth/me").status_code == 401

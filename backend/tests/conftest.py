@@ -52,3 +52,10 @@ def public_signup_app(app_factory):
 @pytest.fixture()
 def secure_app(app_factory):
     return app_factory(overrides={"WTF_CSRF_ENABLED": True})
+
+
+@pytest.fixture()
+def secure_public_app(app_factory):
+    return app_factory(
+        overrides={"WTF_CSRF_ENABLED": True, "ALLOW_PUBLIC_SIGNUP": True}
+    )
