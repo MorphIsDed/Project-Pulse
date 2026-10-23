@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: projectpulse-backend
+Version: 0.1.0
+Summary: ProjectPulse Flask API
+Requires-Python: >=3.11
+Requires-Dist: Flask<4.0,>=3.0
