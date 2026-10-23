@@ -33,12 +33,14 @@ class Config:
     SESSION_COOKIE_SECURE = False
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
+    REMEMBER_COOKIE_DURATION = timedelta(days=14)
     PERMANENT_SESSION_LIFETIME = timedelta(days=7)
 
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
 
     ALLOW_PUBLIC_SIGNUP = env_bool("ALLOW_PUBLIC_SIGNUP", False)
+    DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "DemoPulse123!")
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
     PROPAGATE_EXCEPTIONS = False

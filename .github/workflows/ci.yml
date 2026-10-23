@@ -31,6 +31,8 @@ jobs:
           flask --app wsgi db upgrade
           flask --app wsgi db downgrade base
           flask --app wsgi db upgrade
+      - name: Seed demo accounts
+        run: flask --app wsgi seed-demo
       - name: Run backend tests
         run: python -m pytest -q
 

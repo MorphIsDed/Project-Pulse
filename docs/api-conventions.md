@@ -41,7 +41,17 @@ Clients may send `X-Request-ID`. The API echoes it, or generates one when it is 
 
 ## Authentication and CSRF
 
-The planned authentication method is same-origin cookie sessions using Flask-Login. Mutating requests use CSRF protection; the login flow will expose a CSRF token endpoint before identity routes ship in milestone M1.
+Authentication uses same-origin cookie sessions backed by Flask-Login. State-changing requests must send the current token in the `X-CSRFToken` header. Get a token from `GET /api/v1/auth/csrf`; login and registration return a fresh token that replaces it. A stale token produces `400` with code `csrf_error`, after which the client should fetch a new token and retry once.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/auth/csrf` | Issue a CSRF token |
+| `POST` | `/api/v1/auth/register` | Create an account (disabled by default) |
+| `POST` | `/api/v1/auth/login` | Start a session |
+| `POST` | `/api/v1/auth/logout` | End a session |
+| `GET` | `/api/v1/auth/me` | Return the current user |
+
+Login and registration bodies use `email`, `password`, and (for registration) `display_name`; login also accepts `remember`. Responses return `{ "user": { "id", "email", "display_name" }, "csrf_token" }` and never include password hashes. `POST /auth/register` returns `403 registration_disabled` unless `ALLOW_PUBLIC_SIGNUP=true`. Invalid login attempts return the same `401 invalid_credentials` message for an unknown email and a wrong password. Duplicate registration returns `409 email_taken`.
 
 ## Health
 

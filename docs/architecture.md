@@ -23,7 +23,7 @@ SQLite is appropriate for local academic deployment and modest concurrent use. U
 
 - `backend/app/api`: thin versioned route handlers.
 - `backend/app/models` and `repositories`: persistence mapping and queries.
-- `backend/app/services`: project/task operations and authorization.
+- `backend/app/services`: identity, project/task operations, and authorization.
 - `backend/app/scheduling`: graph validation, calendar arithmetic, constraints, CPM.
 - `backend/app/analytics`: resource load, leveling preview, risk simulation.
 - `frontend/src`: navigation, project/task editing, Gantt, resources, analytics.

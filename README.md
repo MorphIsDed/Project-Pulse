@@ -18,7 +18,7 @@ The detailed product scope, data model, rules, phases, and evaluation plan are i
 
 ## Current status
 
-The platform foundation (milestone M0) is complete: Flask app factory, environment-based configuration, SQLAlchemy models with Alembic migrations, session/CSRF scaffolding, a consistent JSON error envelope, request IDs, database-aware health check, pytest harness, and CI. Identity, tenancy, planning, scheduling, analytics, and export remain planned work; see the status section in [plan.md](plan.md).
+Milestones M0 (platform foundation) and M1 (identity) are complete. The backend provides environment-based configuration, SQLAlchemy models with Alembic migrations, session/CSRF protection, a consistent JSON error envelope, request IDs, a database-aware health check, seeded demo accounts, and cookie-session login/logout/current-user endpoints. The frontend provides a sign-in screen and signed-in landing state. Tenancy, planning, scheduling, analytics, and export remain planned work; see the status section in [plan.md](plan.md).
 
 ## Requirements
 
@@ -45,8 +45,19 @@ Edit `.env` if needed, then initialize the database and start the Flask API from
 ```powershell
 Set-Location backend
 flask db upgrade
+flask seed-demo
 flask run --debug
 ```
+
+`flask seed-demo` is idempotent. It creates three demo accounts and prints how many were created or skipped. The development defaults are:
+
+| Email | Role in later milestones |
+| --- | --- |
+| `owner@demo.local` | organization owner |
+| `editor@demo.local` | editor |
+| `viewer@demo.local` | viewer |
+
+The demo password is `DemoPulse123!` unless `DEMO_PASSWORD` is set. The command refuses to run in production unless `--force` is passed.
 
 The health endpoint is [http://127.0.0.1:5000/api/v1/health](http://127.0.0.1:5000/api/v1/health). It returns `database: "ok"` when the API can reach SQLite.
 
@@ -70,6 +81,7 @@ Configuration comes from `backend/.flaskenv` (Flask app selection) and the root 
 | `DATABASE_URL` | SQLAlchemy database URI | `sqlite:///projectpulse.sqlite3` |
 | `APP_ENV` | `development`, `testing`, or `production` | `development` |
 | `ALLOW_PUBLIC_SIGNUP` | Enables public registration when true | `false` |
+| `DEMO_PASSWORD` | Password assigned by `flask seed-demo` | `DemoPulse123!` |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO` |
 
 A relative SQLite path resolves under `backend/instance/`. Do not commit `.env`, database files, password hashes from real accounts, or production secrets. The Flask development server is for local development only.
@@ -94,7 +106,7 @@ Set-Location backend
 pytest
 ```
 
-Tests use an isolated temporary SQLite database and never touch `backend/instance/`. CI additionally runs `flask db upgrade` against a fresh database to catch model/migration drift.
+Tests use an isolated temporary SQLite database and never touch `backend/instance/`. CI additionally runs `flask db upgrade` against a fresh database to catch model/migration drift, and runs `flask seed-demo` to exercise the demo-account command.
 
 ## Development notes
 

@@ -4,9 +4,11 @@ from pathlib import Path
 from flask import Flask
 
 from app.api import register_blueprints
+from app.cli import register_cli
 from app.config import DEVELOPMENT_SECRET, get_config
 from app.errors import error_response, register_error_handlers
 from app.extensions import csrf, db, login_manager, migrate
+from app.models.user import User
 from app.request_context import register_request_context
 
 
@@ -31,7 +33,15 @@ def create_app(config_name: str | None = None, overrides: dict | None = None) ->
     def unauthorized():
         return error_response("unauthorized", "Authentication is required.", 401)
 
+    @login_manager.user_loader
+    def load_user(user_id: str):
+        try:
+            return db.session.get(User, int(user_id))
+        except (TypeError, ValueError):
+            return None
+
     register_blueprints(app)
+    register_cli(app)
     register_error_handlers(app)
     register_request_context(app)
 

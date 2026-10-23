@@ -13,3 +13,21 @@ h1 em { color: #29806a; font-family: Georgia, serif; font-weight: 400; }
 .status { display: inline-flex; align-items: center; gap: 9px; margin-top: 38px; padding: 11px 14px; border: 1px solid #dce3df; border-radius: 999px; color: #5e7168; font-size: 12px; background: #ffffffa6; }
 .dot { width: 8px; height: 8px; background: #d4a944; border-radius: 50%; }.online { background: #35a479; }.offline { background: #c56b58; }
 footer { padding: 22px 0; border-top: 1px solid #dce3df; color: #829087; font-size: 11px; } footer span { margin: 0 8px; }
+.auth { margin: auto 0; max-width: 480px; padding: 72px 0 80px; }
+.auth h1 { font-size: clamp(46px, 6vw, 68px); }
+.auth .intro { margin-bottom: 28px; }
+.auth-form { display: grid; gap: 16px; max-width: 380px; }
+.auth-form label { display: grid; gap: 7px; color: #5e7168; font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.auth-form input { width: 100%; padding: 13px 14px; border: 1px solid #cfd9d4; border-radius: 9px; background: #ffffffd9; color: #182b3a; font: inherit; font-size: 14px; letter-spacing: normal; text-transform: none; }
+.auth-form input:focus { outline: 2px solid #29806a; outline-offset: 1px; border-color: transparent; }
+.auth-form .checkbox { display: flex; flex-direction: row; align-items: center; gap: 9px; color: #65756e; font-size: 12px; letter-spacing: normal; text-transform: none; }
+.auth-form .checkbox input { width: 15px; height: 15px; padding: 0; accent-color: #1c735d; }
+.auth-form button { margin-top: 4px; padding: 13px 16px; border: 0; border-radius: 9px; background: #1c735d; color: white; font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; }
+.auth-form button:hover:not(:disabled) { background: #175f4d; }
+.auth-form button:disabled { opacity: .6; cursor: wait; }
+.form-error { margin: 0; padding: 11px 13px; border: 1px solid #e3c2ba; border-radius: 8px; background: #fbf0ed; color: #9a4a38; font-size: 13px; }
+.hint { margin-top: 26px; color: #829087; font-size: 11px; line-height: 1.9; }
+.user-chip { margin-left: 12px; color: #5e7168; font-size: 12px; font-weight: 600; }
+.link-button { padding: 0 0 0 14px; border: 0; background: none; color: #27745f; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.link-button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 640px) { .shell { padding: 0 6vw; } .tag { display: none; } .user-chip { margin-left: auto; } .auth { padding: 48px 0 64px; } }
