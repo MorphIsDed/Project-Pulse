@@ -177,7 +177,7 @@ Prepare demo data, scenario results, measured performance, limitations, and the 
 
 Milestone M0 (platform foundation) is complete: Flask app factory, environment-based configuration, Flask-SQLAlchemy models, Flask-Migrate/Alembic baseline, session and CSRF scaffolding, a consistent JSON error envelope, request IDs and access logging, a database-aware health endpoint, pytest fixtures/tests, documentation, and CI.
 
-Milestone M1 (identity) is complete: a `users` model and migration, password hashing, normalized email validation, disabled-by-default registration, login/logout/current-user endpoints, CSRF token issuance, an idempotent `flask seed-demo` command with owner/editor/viewer demo accounts, authentication tests, and a React sign-in screen with session restore and sign-out.
+Milestone M1 (identity) is complete: a `users` model and migration, password hashing, normalized email validation, disabled-by-default registration, login/logout/current-user endpoints, CSRF token issuance, an idempotent `flask seed-demo` command with owner/editor/viewer demo accounts, authentication tests, and a React sign-in screen with session restore and sign-out. Frontend tests cover the API client, auth context, login page, and app auth/health flow with Vitest and React Testing Library.
 
 Organization/workspace access control (M2), project/task planning (M3), scheduling and Gantt (M4–M5), resource analytics (M6), risk simulation (M7), and ICS export (M8) remain to be implemented. Treat this plan as the target design; update this section as features are completed.
 
