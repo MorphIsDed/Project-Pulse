@@ -202,7 +202,7 @@ def test_seed_demo_is_idempotent(app):
 def test_seed_demo_refuses_production_without_force(app_factory):
     production_app = app_factory(
         "production",
-        overrides={"SECRET_KEY": "production-test-secret"},
+        overrides={"SECRET_KEY": "production-test-secret-with-32-characters", "TESTING": True},
     )
     runner = production_app.test_cli_runner()
 

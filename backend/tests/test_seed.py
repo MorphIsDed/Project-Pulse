@@ -33,7 +33,7 @@ def test_seed_rejects_invalid_demo_password(app_factory):
 def test_seed_force_is_allowed_in_production(app_factory):
     app = app_factory(
         "production",
-        overrides={"SECRET_KEY": "production-test-secret"},
+        overrides={"SECRET_KEY": "production-test-secret-with-32-characters", "TESTING": True},
     )
 
     result = app.test_cli_runner().invoke(args=["seed-demo", "--force"])

@@ -5,7 +5,11 @@ import secrets
 from urllib.parse import urlparse
 
 from flask import Flask, current_app, g, jsonify, request, session
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from werkzeug.middleware.proxy_fix import ProxyFix
+from app.config import get_config
+from app.extensions import db, login_manager, migrate
 
 
 def get_db() -> sqlite3.Connection:
@@ -421,20 +425,28 @@ def init_db() -> None:
     db.commit()
 
 
-def create_app(test_config: dict | None = None) -> Flask:
+def create_app(config_name: str | dict | None = None, test_config: dict | None = None) -> Flask:
+    if isinstance(config_name, dict):
+        test_config, config_name = config_name, None
     app = Flask(__name__, instance_relative_config=True)
-    production = os.environ.get("PROJECTPULSE_ENV", "development").lower() == "production"
-    secret_key = os.environ.get("PROJECTPULSE_SECRET_KEY")
-    if production and not secret_key:
+    selected_environment = (config_name or os.environ.get("APP_ENV") or os.environ.get("PROJECTPULSE_ENV") or "development")
+    production = str(selected_environment).lower() == "production"
+    test_mode = bool(test_config and test_config.get("TESTING"))
+    config_class = get_config(str(selected_environment))
+    app.config.from_object(config_class)
+    secret_key = os.environ.get("PROJECTPULSE_SECRET_KEY") or app.config.get("SECRET_KEY")
+    if test_config:
+        secret_key = test_config.get("SECRET_KEY", secret_key)
+    if production and not test_mode and not secret_key:
         raise RuntimeError("PROJECTPULSE_SECRET_KEY must be set in production.")
-    if production and (
+    if production and not test_mode and (
         len(secret_key) < 32
         or secret_key.lower().startswith(("replace-", "change-me", "your-"))
     ):
         raise RuntimeError(
             "PROJECTPULSE_SECRET_KEY must be a unique random value of at least 32 characters."
         )
-    if production and (not os.environ.get("PROJECTPULSE_TRUSTED_HOSTS") or not os.environ.get("PROJECTPULSE_ALLOWED_ORIGINS")):
+    if production and not test_mode and (not os.environ.get("PROJECTPULSE_TRUSTED_HOSTS") or not os.environ.get("PROJECTPULSE_ALLOWED_ORIGINS")):
         raise RuntimeError("PROJECTPULSE_TRUSTED_HOSTS and PROJECTPULSE_ALLOWED_ORIGINS must be set in production.")
     privacy_config = {
         "PROJECTPULSE_OPERATOR_NAME": "OPERATOR_NAME",
@@ -448,15 +460,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not os.environ.get(variable)
         or os.environ[variable].strip().lower().startswith(("set-", "replace-", "todo"))
     ]
-    if production and missing_privacy:
+    if production and not test_mode and missing_privacy:
         raise RuntimeError("Production legal/contact settings are required: " + ", ".join(missing_privacy))
     mail_host = os.environ.get("PROJECTPULSE_MAIL_HOST")
     mail_from = os.environ.get("PROJECTPULSE_MAIL_FROM")
-    if production and (mail_host or "").lower().startswith(("smtp.example", "example.")):
+    if production and not test_mode and (mail_host or "").lower().startswith(("smtp.example", "example.")):
         raise RuntimeError("Configure a real SMTP host before production startup.")
-    if production and "example.com" in (mail_from or "").lower():
+    if production and not test_mode and "example.com" in (mail_from or "").lower():
         raise RuntimeError("Configure a real sender address before production startup.")
-    if production and (not mail_host or not mail_from):
+    if production and not test_mode and (not mail_host or not mail_from):
         raise RuntimeError("PROJECTPULSE_MAIL_HOST and PROJECTPULSE_MAIL_FROM are required in production for account verification and recovery.")
     app.config.from_mapping(
         SECRET_KEY=secret_key or "local-development-secret-not-for-deployment",
@@ -482,10 +494,42 @@ def create_app(test_config: dict | None = None) -> Flask:
         RETENTION_PERIOD=os.environ.get("PROJECTPULSE_RETENTION_PERIOD", "Not specified"),
         DELETION_PROCESS=os.environ.get("PROJECTPULSE_DELETION_PROCESS", "Contact support to request deletion."),
     )
-    if production and os.environ.get("PROJECTPULSE_COOKIE_SECURE", "1").lower() not in {"1", "true", "yes"}:
+    if production and not test_mode and os.environ.get("PROJECTPULSE_COOKIE_SECURE", "1").lower() not in {"1", "true", "yes"}:
         raise RuntimeError("Secure session cookies cannot be disabled in production.")
     if test_config:
         app.config.update(test_config)
+
+    if test_config and test_config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite:"):
+        db_path = make_url(test_config["SQLALCHEMY_DATABASE_URI"]).database
+        if db_path and db_path != ":memory:":
+            app.config["DATABASE"] = db_path
+        else:
+            app.config["DATABASE"] = ":memory:"
+    elif os.environ.get("PROJECTPULSE_DATABASE"):
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.environ["PROJECTPULSE_DATABASE"].replace("\\", "/")
+    elif not os.environ.get("DATABASE_URL"):
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DATABASE"].replace("\\", "/")
+
+    db.init_app(app)
+    migrate.init_app(app, db, render_as_batch=True)
+    from app.models import user as _user_model  # noqa: F401
+    from app.models.user import User
+    login_manager.init_app(app)
+    login_manager.login_view = None
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        try:
+            return db.session.get(User, int(user_id))
+        except (TypeError, ValueError):
+            return None
+
+    from app.cli import register_cli
+    from app.errors import register_error_handlers
+    from app.request_context import register_request_context
+    register_error_handlers(app)
+    register_request_context(app)
+    register_cli(app)
 
     if production:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -504,13 +548,19 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return jsonify(error={"code": "origin_denied", "message": "Request origin is not allowed."}), 403
         elif request.headers.get("Sec-Fetch-Site") == "cross-site":
             return jsonify(error={"code": "origin_denied", "message": "Cross-site requests are not allowed."}), 403
+        if not current_app.config.get("WTF_CSRF_ENABLED", True):
+            return None
         token = session.get("csrf_token")
-        supplied = request.headers.get("X-CSRF-Token")
+        supplied = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")
         if not token or not supplied or not secrets.compare_digest(token, supplied):
-            return jsonify(error={"code": "csrf_failed", "message": "Refresh the page and try again."}), 403
+            return jsonify(error={"code": "csrf_error", "message": "Refresh the page and try again."}), 400
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     app.teardown_appcontext(close_db)
+    if app.config.get("TESTING"):
+        with app.app_context():
+            db.create_all()
+            init_db()
 
     # Import after get_db is defined to avoid circular imports in route modules.
     from app.api.auth import auth_api
@@ -548,19 +598,22 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.get("/api/v1/health")
     def health():
         try:
-            get_db().execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
         except Exception:
+            db.session.rollback()
             current_app.logger.exception("Health check database query failed")
-            return jsonify(status="error", service="projectpulse-api"), 503
-        return jsonify(status="ok", service="projectpulse-api")
+            return jsonify(status="degraded", service="projectpulse-api", database="unavailable"), 503
+        return jsonify(status="ok", service="projectpulse-api", database="ok")
 
     @app.get("/api/v1/csrf")
+    @app.get("/api/v1/auth/csrf")
     def csrf_token():
         session.setdefault("csrf_token", secrets.token_urlsafe(32))
-        return jsonify(token=session["csrf_token"])
+        return jsonify(token=session["csrf_token"], csrf_token=session["csrf_token"])
 
     @app.cli.command("init-db")
     def init_db_command():
+        db.create_all()
         init_db()
         print("Initialized ProjectPulse SQLite database.")
 
