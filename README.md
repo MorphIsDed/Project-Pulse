@@ -14,11 +14,11 @@ The app combines a React + TypeScript frontend, a Flask JSON API, and a SQLite d
 - PERT/Monte Carlo deadline confidence estimates with reproducible seeds.
 - ICS calendar export.
 
-The detailed product scope, data model, rules, phases, and evaluation plan are in [plan.md](plan.md). Scheduling conventions are also recorded in [docs/scheduling-assumptions.md](docs/scheduling-assumptions.md), and the module design is in [docs/architecture.md](docs/architecture.md).
+The detailed product scope, data model, rules, phases, and evaluation plan are in [plan.md](plan.md). Scheduling conventions are recorded in [docs/scheduling-assumptions.md](docs/scheduling-assumptions.md), module design is in [docs/architecture.md](docs/architecture.md), and API conventions are in [docs/api-conventions.md](docs/api-conventions.md).
 
 ## Current status
 
-The initial Flask API, SQLite foundation, and React interface are in place. Production security and container deployment scaffolding are being added; PostgreSQL and versioned schema migrations remain prerequisites before a production launch.
+Milestones M0 (platform foundation) and M1 (identity) are complete. The backend provides environment-based configuration, SQLAlchemy models with Alembic migrations, session/CSRF protection, a consistent JSON error envelope, request IDs, a database-aware health check, seeded demo accounts, and cookie-session login/logout/current-user endpoints. The frontend provides a sign-in screen and signed-in landing state. Tenancy, planning, scheduling, analytics, and export remain planned work; see the status section in [plan.md](plan.md).
 
 ## Requirements
 
@@ -26,6 +26,8 @@ The initial Flask API, SQLite foundation, and React interface are in place. Prod
 - Node.js and npm (use the current supported LTS release for development).
 - The packages listed in `requirements.txt` for the backend, analysis, export, and development checks.
 - Frontend packages listed in `frontend/package.json`.
+
+`requirements.txt` is the single source of dependency versions. `backend/pyproject.toml` holds tooling configuration only.
 
 ## Run locally on Windows PowerShell
 
@@ -35,22 +37,34 @@ From the project root:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-Start the Flask API from `backend` in that activated environment:
+Edit `.env` if needed, then initialize the database and start the Flask API from `backend`:
 
 ```powershell
 Set-Location backend
-flask --app wsgi init-db
-flask --app wsgi run --debug
+flask db upgrade
+flask seed-demo
+flask run --debug
 ```
 
-The health endpoint is [http://127.0.0.1:5000/api/v1/health](http://127.0.0.1:5000/api/v1/health).
+`flask seed-demo` is idempotent. It creates three demo accounts and prints how many were created or skipped. The development defaults are:
+
+| Email | Role in later milestones |
+| --- | --- |
+| `owner@demo.local` | organization owner |
+| `editor@demo.local` | editor |
+| `viewer@demo.local` | viewer |
+
+The demo password is `DemoPulse123!` unless `DEMO_PASSWORD` is set. The command refuses to run in production unless `--force` is passed.
+
+The health endpoint is [http://127.0.0.1:5000/api/v1/health](http://127.0.0.1:5000/api/v1/health). It returns `database: "ok"` when the API can reach SQLite.
 
 In a second terminal, install and start the frontend:
 
 ```powershell
-Set-Location "D:\Project Pulse\frontend"
+Set-Location frontend
 npm install
 npm run dev
 ```
@@ -59,13 +73,57 @@ Open the local URL printed by Vite. Vite forwards `/api` requests to the Flask d
 
 ## Configuration and data
 
-The development SQLite database is stored under `backend/instance/`. Do not commit database files, password hashes from real accounts, environment files, or production secrets. Local development uses a local-only secret. Production requires `PROJECTPULSE_SECRET_KEY`, `PROJECTPULSE_TRUSTED_HOSTS`, and `PROJECTPULSE_ALLOWED_ORIGINS`; secure cookies are enforced. See [docs/deployment.md](docs/deployment.md). The Flask development server is for local development only.
+Configuration comes from `backend/.flaskenv` (Flask app selection) and the root `.env` file (secrets and environment).
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `SECRET_KEY` | Flask session signing key | development fallback |
+| `DATABASE_URL` | SQLAlchemy database URI | `sqlite:///projectpulse.sqlite3` |
+| `APP_ENV` | `development`, `testing`, or `production` | `development` |
+| `ALLOW_PUBLIC_SIGNUP` | Enables public registration when true | `false` |
+| `DEMO_PASSWORD` | Password assigned by `flask seed-demo` | `DemoPulse123!` |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO` |
+
+A relative SQLite path resolves under `backend/instance/`. Do not commit `.env`, database files, password hashes from real accounts, or production secrets. The Flask development server is for local development only.
+
+## Database migrations
+
+Schema changes are managed with Flask-Migrate/Alembic. Run all commands from `backend` with the virtual environment active:
+
+```powershell
+flask db upgrade          # apply migrations
+flask db revision -m "..."  # create an empty revision
+flask db migrate -m "..."   # autogenerate from model changes (review it)
+flask db downgrade        # step back one revision
+```
+
+Review autogenerated migrations before committing them. SQLite is configured with batch mode for `ALTER` operations.
+
+## Tests
+
+Backend tests use an isolated temporary SQLite database and never touch `backend/instance/`:
+
+```powershell
+Set-Location backend
+pytest
+```
+
+Frontend tests use Vitest, jsdom, and React Testing Library; they run without a backend:
+
+```powershell
+Set-Location frontend
+npm test
+npm run test:coverage
+npm run build
+```
+
+CI runs both suites, applies migrations against a fresh database to catch model/migration drift, and runs `flask seed-demo` to exercise the demo-account command.
 
 ## Development notes
 
 - Keep scheduling and analytics logic independent of Flask request state.
-- Use transactions for related writes and check project versions for stale edits.
-- Enforce tenant membership on every project read and mutation.
+- Use SQLAlchemy transactions for related writes and check project versions for stale edits.
+- Enforce organization and workspace membership on every project read and mutation.
 - Keep schedule inputs separate from derived dates.
 - Document any change to date, calendar, dependency, or simulation assumptions.
 - Build features in the order and acceptance criteria in `plan.md`.

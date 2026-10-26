@@ -1,165 +1,80 @@
-import sqlite3
+from flask import Blueprint, current_app, g, jsonify
+from flask_login import current_user, login_required, login_user, logout_user
+from flask_wtf.csrf import generate_csrf
 
-from flask import Blueprint, jsonify, request, session
-from werkzeug.security import generate_password_hash, check_password_hash
-
-from app import get_db
+from app.api.validation import json_body, require_fields
+from app.errors import ApiError
+from app.services.identity import authenticate, create_user
 
 auth_api = Blueprint("auth_api", __name__, url_prefix="/api/v1/auth")
 
 
+@auth_api.get("/csrf")
+def csrf_token():
+    return jsonify(csrf_token=generate_csrf())
+
+
 @auth_api.post("/register")
 def register():
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return jsonify(
-            error={"code": "invalid_json", "message": "Send a JSON object."}
-        ), 400
-
-    email = data.get("email")
-    password = data.get("password")
-    display_name = data.get("display_name")
-
-    if not all(isinstance(value, str) for value in (email, password, display_name)):
-        return jsonify(
-            error={
-                "code": "missing_fields",
-                "message": "Email, password, and display name are required.",
-            }
-        ), 400
-
-    email = email.strip().lower()
-    display_name = display_name.strip()
-
-    if "@" not in email or any(char.isspace() for char in email):
-        return jsonify(
-            error={"code": "invalid_email", "message": "Enter a valid email address."}
-        ), 400
-
-    if len(password) < 8:
-        return jsonify(
-            error={
-                "code": "weak_password",
-                "message": "Password must be at least 8 characters.",
-            }
-        ), 400
-
-    if not display_name:
-        return jsonify(
-            error={
-                "code": "invalid_display_name",
-                "message": "Display name cannot be empty.",
-            }
-        ), 400
-
-    password_hash = generate_password_hash(password)
-
-    try:
-        db = get_db()
-        cursor = db.execute(
-            """
-            INSERT INTO users (email, password_hash, display_name)
-            VALUES (?, ?, ?)
-            """,
-            (email, password_hash, display_name),
+    if not current_app.config.get("ALLOW_PUBLIC_SIGNUP", False):
+        raise ApiError(
+            "registration_disabled",
+            "Public registration is currently disabled.",
+            403,
         )
-        db.commit()
-    except sqlite3.IntegrityError:
-        get_db().rollback()
-        return jsonify(
-            error={
-                "code": "email_conflict",
-                "message": "That email is already registered.",
-            }
-        ), 409
 
-    return jsonify(
-        user={
-            "id": cursor.lastrowid,
-            "email": email,
-            "display_name": display_name,
-        }
-    ), 201
-    
+    data = json_body()
+    require_fields(data, "email", "password", "display_name")
+
+    user = create_user(data["email"], data["password"], data["display_name"])
+    login_user(user)
+
+    return (
+        jsonify(user=user.to_dict(), csrf_token=generate_csrf()),
+        201,
+    )
+
 
 @auth_api.post("/login")
 def login():
-    data = request.get_json(silent=True)
+    data = json_body()
+    require_fields(data, "email", "password")
 
-    if not isinstance(data, dict):
-        return jsonify(
-            error={"code": "invalid_json", "message": "Send a JSON object."}
-        ), 400
+    remember = data.get("remember", False)
+    if not isinstance(remember, bool):
+        raise ApiError("validation_error", "remember must be a boolean.", 400)
 
-    email = data.get("email")
-    password = data.get("password")
+    user = authenticate(data["email"], data["password"])
+    if user is None:
+        current_app.logger.info(
+            "auth.login.failed request_id=%s", getattr(g, "request_id", "")
+        )
+        raise ApiError(
+            "invalid_credentials",
+            "Email or password is incorrect.",
+            401,
+        )
 
-    if not isinstance(email, str) or not isinstance(password, str):
-        return jsonify(
-            error={"code": "missing_fields", "message": "Email and password are required."}
-        ), 400
+    login_user(user, remember=remember)
+    current_app.logger.info(
+        "auth.login.succeeded user_id=%s request_id=%s",
+        user.id,
+        getattr(g, "request_id", ""),
+    )
 
-    user = get_db().execute(
-        """
-        SELECT id, email, password_hash, display_name
-        FROM users
-        WHERE email = ?
-        """,
-        (email.strip().lower(),),
-    ).fetchone()
-
-    if user is None or not check_password_hash(user["password_hash"], password):
-        return jsonify(
-            error={"code": "invalid_credentials", "message": "Email or password is incorrect."}
-        ), 401
-
-    session.clear()
-    session["user_id"] = user["id"]
-
-    return jsonify(
-        user={
-            "id": user["id"],
-            "email": user["email"],
-            "display_name": user["display_name"],
-        }
-    ), 200
+    return jsonify(user=user.to_dict(), csrf_token=generate_csrf())
 
 
 @auth_api.post("/logout")
 def logout():
-    session.clear()
-    return "", 204
+    logout_user()
+    current_app.logger.info(
+        "auth.logout request_id=%s", getattr(g, "request_id", "")
+    )
+    return jsonify(status="ok")
 
 
 @auth_api.get("/me")
-def current_user():
-    user_id = session.get("user_id")
-
-    if user_id is None:
-        return jsonify(
-            error={"code": "not_authenticated", "message": "Please log in."}
-        ), 401
-
-    user = get_db().execute(
-        """
-        SELECT id, email, display_name
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,),
-    ).fetchone()
-
-    if user is None:
-        session.clear()
-        return jsonify(
-            error={"code": "not_authenticated", "message": "Please log in again."}
-        ), 401
-
-    return jsonify(
-        user={
-            "id": user["id"],
-            "email": user["email"],
-            "display_name": user["display_name"],
-        }
-    ), 200
+@login_required
+def me():
+    return jsonify(user=current_user.to_dict())

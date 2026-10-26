@@ -175,7 +175,11 @@ Prepare demo data, scenario results, measured performance, limitations, and the 
 
 ## 11. Current implementation status
 
-The workspace currently contains an initial Flask/SQLite backend, a React/TypeScript landing page, and the architecture/scheduling notes. The API health endpoint is the only completed application flow. Registration, organization/workspace/project APIs, scheduling, Gantt interactions, resource analytics, risk simulation, and ICS export remain to be implemented. Treat this plan as the target design; update this section as features are completed.
+Milestone M0 (platform foundation) is complete: Flask app factory, environment-based configuration, Flask-SQLAlchemy models, Flask-Migrate/Alembic baseline, session and CSRF scaffolding, a consistent JSON error envelope, request IDs and access logging, a database-aware health endpoint, pytest fixtures/tests, documentation, and CI.
+
+Milestone M1 (identity) is complete: a `users` model and migration, password hashing, normalized email validation, disabled-by-default registration, login/logout/current-user endpoints, CSRF token issuance, an idempotent `flask seed-demo` command with owner/editor/viewer demo accounts, authentication tests, and a React sign-in screen with session restore and sign-out. Frontend tests cover the API client, auth context, login page, and app auth/health flow with Vitest and React Testing Library.
+
+Organization/workspace access control (M2), project/task planning (M3), scheduling and Gantt (M4–M5), resource analytics (M6), risk simulation (M7), and ICS export (M8) remain to be implemented. Treat this plan as the target design; update this section as features are completed.
 
 ## 12. Open decisions
 
@@ -184,4 +188,3 @@ The workspace currently contains an initial Flask/SQLite backend, a React/TypeSc
 - Which task constraints are supported and are they hard or advisory?
 - Can each project choose its timezone and working hours in the first release?
 - Which Gantt interactions and library best fit the academic evaluation?
-- Is public account registration required, or will the initial demo use a seeded account?

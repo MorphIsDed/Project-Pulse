@@ -1,17 +1,6 @@
-[project]
-name = "projectpulse-backend"
-version = "0.1.0"
-description = "ProjectPulse Flask API"
-requires-python = ">=3.11"
-dependencies = [
-  "Flask>=3.0,<4.0",
-]
+# Tooling configuration only. Runtime and development dependencies live in
+# the repository root requirements.txt, which is the single source of truth.
 
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["app*"]
-exclude = ["instance*"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
