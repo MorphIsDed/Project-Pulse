@@ -43,7 +43,7 @@ def inspect_database(path: str | Path) -> dict[str, int]:
             )
         ]
         return {
-            table: connection.execute(f' SELECT count(*) FROM "{table}"').fetchone()[0]
+            table: connection.execute(f' SELECT count(*) FROM "{table}"').fetchone()[0]  # nosec B608 — identifiers come from the verified SQLite table list.
             for table in tables
         }
 

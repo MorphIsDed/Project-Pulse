@@ -41,7 +41,7 @@ Start the Flask API from `backend` in that activated environment:
 
 ```powershell
 Set-Location backend
-flask --app wsgi init-db
+flask --app wsgi db upgrade
 flask --app wsgi run --debug
 ```
 

@@ -14,7 +14,7 @@ def export_account():
     uid=session.get("user_id")
     if not uid:return jsonify(error={"code":"not_authenticated","message":"Please log in."}),401
     db=get_db(); org_ids=[r[0] for r in db.execute("SELECT organization_id FROM organization_memberships WHERE user_id=?",(uid,)).fetchall()]
-    result={"export_version":1,"user":dict(db.execute("SELECT id,email,display_name,email_verified_at,created_at FROM users WHERE id=?",(uid,)).fetchone()),"organizations":[]}
+    result={"export_version":1,"user":dict(db.execute("SELECT id,email,display_name,email_verified_at,created_at FROM users WHERE id=?",(uid,)).fetchone()),"notifications":[dict(row) for row in db.execute("SELECT id,organization_id,project_id,task_id,kind,message,read_at,created_at FROM notifications WHERE user_id=? ORDER BY created_at,id",(uid,)).fetchall()],"organizations":[]}
     for oid in org_ids:
         org=dict(db.execute("SELECT * FROM organizations WHERE id=?",(oid,)).fetchone()); org["memberships"]=[dict(r) for r in db.execute("SELECT organization_id,user_id,role,created_at FROM organization_memberships WHERE organization_id=?",(oid,)).fetchall()]; org["audit_events"]=[dict(r) for r in db.execute("SELECT * FROM audit_events WHERE organization_id=?",(oid,)).fetchall()]
         org["workspaces"]=[]
@@ -23,8 +23,7 @@ def export_account():
             for p in db.execute("SELECT * FROM projects WHERE workspace_id=?",(w["id"],)).fetchall():
                 project=dict(p)
                 for table in ("tasks","dependencies","resources","analysis_runs","calendars"):
-                    project[table]=[dict(r) for r in db.execute(f"SELECT * FROM {table} WHERE project_id=?",(p["id"],)).fetchall()]
-                task_ids=[t["id"] for t in project["tasks"]]
+                    project[table]=[dict(r) for r in db.execute(f"SELECT * FROM {table} WHERE project_id=?",(p["id"],)).fetchall()]  # nosec B608 — table names are from the fixed export allowlist.
                 project["assignments"]=[dict(r) for r in db.execute("SELECT a.* FROM assignments a JOIN tasks t ON t.id=a.task_id WHERE t.project_id=?",(p["id"],)).fetchall()]
                 workspace["projects"].append(project)
             org["workspaces"].append(workspace)
@@ -59,7 +58,7 @@ def export_workspace(workspace_id):
     projects=[dict(p) for p in db.execute("SELECT * FROM projects WHERE workspace_id=?",(workspace_id,)).fetchall()]
     for p in projects:
         for table in ("tasks","dependencies","resources","analysis_runs","calendars"):
-            p[table]=[dict(r) for r in db.execute(f"SELECT * FROM {table} WHERE project_id=?",(p["id"],)).fetchall()]
+            p[table]=[dict(r) for r in db.execute(f"SELECT * FROM {table} WHERE project_id=?",(p["id"],)).fetchall()]  # nosec B608 — table names are from the fixed export allowlist.
         p["assignments"]=[dict(r) for r in db.execute("SELECT a.* FROM assignments a JOIN tasks t ON t.id=a.task_id WHERE t.project_id=?",(p["id"],)).fetchall()]
     return jsonify(workspace=dict(row),projects=projects)
 
@@ -76,7 +75,7 @@ def import_guest():
     uid=session.get("user_id"); data=request.get_json(silent=True) or {}; draft=data.get("draft_id"); snapshot=data.get("snapshot")
     if not uid:return jsonify(error={"code":"not_authenticated","message":"Please log in."}),401
     if not isinstance(draft,str) or len(draft)>100 or not isinstance(snapshot,dict):return jsonify(error={"code":"invalid_guest_data","message":"Guest data is incomplete."}),400
-    db=get_db(); db.execute("CREATE TABLE IF NOT EXISTS guest_imports(user_id INTEGER NOT NULL,draft_id TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(user_id,draft_id),FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)")
+    db=get_db()
     if db.execute("SELECT 1 FROM guest_imports WHERE user_id=? AND draft_id=?",(uid,draft)).fetchone():return jsonify(imported=True,already_imported=True),200
     # Validate the entire payload before any insert; all writes share one transaction.
     organizations=snapshot.get("organizations",[]); workspaces=snapshot.get("workspaces",[]); projects=snapshot.get("projects",[]); tasks=snapshot.get("tasks",[])

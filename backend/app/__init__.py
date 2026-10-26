@@ -5,6 +5,7 @@ import secrets
 from urllib.parse import urlparse
 
 from flask import Flask, current_app, g, jsonify, request, session
+from flask_login import current_user
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -30,8 +31,13 @@ def close_db(_error: BaseException | None = None) -> None:
         connection.close()
 
 
-def init_db() -> None:
-    db = get_db()
+def init_db(connection: sqlite3.Connection | None = None) -> None:
+    """Create or upgrade the SQLite application schema.
+
+    Alembic calls this during the core-schema revision. Tests also call it
+    directly when building an isolated database.
+    """
+    db = connection or get_db()
     db.executescript(
         """
         CREATE TABLE IF NOT EXISTS schema_meta (
@@ -51,8 +57,10 @@ def init_db() -> None:
             email TEXT NOT NULL UNIQUE COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
             email_verified_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS organization_memberships (
@@ -324,6 +332,11 @@ def init_db() -> None:
     )
 
     user_columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+    if "is_active" not in user_columns:
+        db.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+    if "updated_at" not in user_columns:
+        db.execute("ALTER TABLE users ADD COLUMN updated_at TEXT")
+        db.execute("UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL")
     if "email_verified_at" not in user_columns:
         db.execute("ALTER TABLE users ADD COLUMN email_verified_at TEXT")
         db.execute("UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL")
@@ -382,6 +395,14 @@ def init_db() -> None:
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS guest_imports (
+            user_id INTEGER NOT NULL,
+            draft_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, draft_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         INSERT OR IGNORE INTO schema_meta(version) VALUES (3);
         """
     )
@@ -399,7 +420,7 @@ def init_db() -> None:
     }
     for column, definition in project_additions.items():
         if column not in project_columns:
-            db.execute(f"ALTER TABLE projects ADD COLUMN {column} {definition}")
+            db.execute(f"ALTER TABLE projects ADD COLUMN {column} {definition}")  # nosec B608 — identifier and type are from fixed migration metadata.
 
     db.execute(
         "UPDATE projects SET updated_at = CURRENT_TIMESTAMP "
@@ -537,6 +558,18 @@ def create_app(config_name: str | dict | None = None, test_config: dict | None =
         import sentry_sdk
         from sentry_sdk.integrations.flask import FlaskIntegration
         sentry_sdk.init(dsn=app.config["SENTRY_DSN"], integrations=[FlaskIntegration()], traces_sample_rate=0.0, send_default_pii=False)
+    elif production:
+        app.logger.warning(
+            "Remote exception monitoring is disabled; configure PROJECTPULSE_SENTRY_DSN."
+        )
+
+    @app.before_request
+    def restore_remembered_session():
+        # Flask-Login restores its own user id from remember_token. Most of
+        # this API uses session["user_id"], so synchronize the two once when
+        # the short-lived Flask session cookie is absent.
+        if current_user.is_authenticated and session.get("user_id") is None:
+            session["user_id"] = int(current_user.get_id())
 
     @app.before_request
     def protect_state_changes():
@@ -610,11 +643,5 @@ def create_app(config_name: str | dict | None = None, test_config: dict | None =
     def csrf_token():
         session.setdefault("csrf_token", secrets.token_urlsafe(32))
         return jsonify(token=session["csrf_token"], csrf_token=session["csrf_token"])
-
-    @app.cli.command("init-db")
-    def init_db_command():
-        db.create_all()
-        init_db()
-        print("Initialized ProjectPulse SQLite database.")
 
     return app

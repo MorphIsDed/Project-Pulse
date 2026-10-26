@@ -76,4 +76,49 @@ describe("welcome and sample onboarding", () => {
     ) as { organizations?: unknown[] };
     expect(savedGuest.organizations).toEqual([]);
   });
+
+  it("keeps keyboard focus inside the sign-in dialog and labels it for assistive technology", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Sign in to your workspace" });
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(document.activeElement).toBe(closeButton);
+
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    const focusable = dialog.querySelectorAll<HTMLElement>(
+      'a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])',
+    );
+    expect(document.activeElement).toBe(focusable[focusable.length - 1]);
+  });
+});
+
+describe("account registration", () => {
+  it("shows the verification guidance without attempting an immediate login", async () => {
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/api/v1/auth/me")) return jsonResponse({ user: null });
+        if (url.includes("/api/v1/csrf")) return jsonResponse({ token: "csrf-token" });
+        if (url.includes("/api/v1/auth/register")) {
+          return jsonResponse({ message: "Account created. Check your email to verify it before signing in." }, 201);
+        }
+        return jsonResponse({});
+      }),
+    );
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create an account" }));
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "New User" } });
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "CorrectHorse123!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/check your email to verify/i);
+    expect(screen.getByRole("heading", { name: "Sign in to your workspace" })).toBeInTheDocument();
+    expect(requests.some((url) => url.endsWith("/api/v1/auth/login"))).toBe(false);
+  });
 });

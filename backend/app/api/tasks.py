@@ -252,7 +252,7 @@ def update_task(project_id, task_id):
     assignments = ", ".join(f"{field} = ?" for field in updates)
     try:
         previous_owner=task["owner_user_id"]
-        db.execute(f"UPDATE tasks SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?", [*updates.values(), task_id, project_id])
+        db.execute(f"UPDATE tasks SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?", [*updates.values(), task_id, project_id])  # nosec B608 — assignment columns are built from validated update fields.
         if "owner_user_id" in updates and updates["owner_user_id"] and updates["owner_user_id"] != previous_owner:
             db.execute("INSERT INTO notifications(user_id,project_id,task_id,kind,message) VALUES(?,?,?,'task_assigned',?)",(updates["owner_user_id"],project_id,task_id,f"You were assigned to {task['name']}"))
         db.execute("UPDATE projects SET version = version + 1 WHERE id = ?", (project_id,))

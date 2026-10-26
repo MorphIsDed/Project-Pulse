@@ -5,7 +5,7 @@
 Production uses SQLite on a persistent Docker volume. Caddy serves the built frontend, routes `/api/*` to the private Flask API, and obtains and renews HTTPS certificates for `APP_DOMAIN`. The API port is not exposed to the internet. Gunicorn writes access and error logs to the container's standard output/error streams.
 
 1. Point the domain's DNS record at the deployment host and allow inbound ports 80 and 443.
-2. Copy `.env.example` to `.env`. Set `APP_DOMAIN`, generate a unique secret with `python -c "import secrets; print(secrets.token_hex(32))"`, and paste it as `PROJECTPULSE_SECRET_KEY`. Production startup rejects missing, short, and placeholder secrets.
+2. Copy `.env.example` to `.env`. Set `APP_DOMAIN`, generate a unique secret with `python -c "import secrets; print(secrets.token_hex(32))"`, and paste it as `PROJECTPULSE_SECRET_KEY`. Production startup rejects missing, short, and placeholder secrets. Set `ALLOW_PUBLIC_SIGNUP=1` only if you want open registration; it is disabled by default.
 3. Set `BACKUP_PATH` to a persistent, encrypted backup location. For production, use storage outside the application host and make the directory writable by container UID 10001.
 4. Start the production stack:
 
@@ -13,11 +13,17 @@ Production uses SQLite on a persistent Docker volume. Caddy serves the built fro
    docker compose up -d --build
    ```
 
-The API initializes the SQLite schema before starting Gunicorn. `/api/v1/health` checks database connectivity. Caddy sends HTTP traffic to HTTPS and serves the React single-page app at the same origin as the API.
+5. Create the first owner account interactively (once per empty database):
+
+   ```sh
+   docker compose run --rm -it api flask --app wsgi create-admin
+   ```
+
+The API applies all SQLite schema revisions with `flask db upgrade` before starting Gunicorn. The first-owner command prompts for an email, display name, and password without echoing the password. It works only while the database has no users. Do not seed demo accounts in production. `/api/v1/health` checks database connectivity. Caddy sends HTTP traffic to HTTPS and serves the React single-page app at the same origin as the API.
 
 ## Automated backups
 
-The `backup` service takes a consistent SQLite online backup immediately after the API is healthy and repeats at `PROJECTPULSE_BACKUP_INTERVAL_SECONDS` (default: daily). It checks SQLite integrity and foreign keys before publishing each backup and removes backups older than `PROJECTPULSE_BACKUP_RETENTION_DAYS` (default: 30). Failed backup operations are logged and the container restarts to retry.
+The `backup` service takes a consistent SQLite online backup immediately after the API is healthy and repeats at `PROJECTPULSE_BACKUP_INTERVAL_SECONDS` (default: daily). It checks SQLite integrity and foreign keys before publishing each backup and removes backups older than `PROJECTPULSE_BACKUP_RETENTION_DAYS` (default: 30). Failed backup operations are logged and the container restarts to retry. The application does not encrypt backup files itself: configure `BACKUP_PATH` as access-controlled encrypted storage outside the application host.
 
 Backups are stored under `BACKUP_PATH`. Configure that path as encrypted, persistent storage outside the application host; a local folder alone does not protect against host or disk loss. Restrict access to the backup location and include its contents in the organization's off-site retention policy.
 
@@ -49,7 +55,7 @@ The restore command verifies the temporary copy and its row counts before atomic
 
 ## Application and edge security
 
-The production app requires a secret of at least 32 characters, trusted host and allowed origin settings, and secure session cookies. State-changing requests require the CSRF token and an allowed same-site origin. Caddy terminates HTTPS, applies HSTS and related browser security headers, and keeps the API private to the deployment network. Do not use Flask's development server or Vite's development server in production.
+The production app requires a secret of at least 32 characters, trusted host and allowed origin settings, and secure session cookies. State-changing requests require the CSRF token and an allowed same-site origin. Caddy terminates HTTPS, applies HSTS, a same-origin content security policy, and related browser security headers, and keeps the API private to the deployment network. Set `PROJECTPULSE_SENTRY_DSN` to a DSN from your error-monitoring service to enable remote exception reporting; request and server errors are logged to container output either way. Do not use Flask's development server or Vite's development server in production.
 
 ## Build images manually
 

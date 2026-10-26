@@ -101,7 +101,7 @@ async function fetchCsrfToken(force = false): Promise<string> {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init: RequestInit = {},
   allowRetry = true,
@@ -124,7 +124,13 @@ async function request<T>(
   });
 
   if (response.ok) {
-    return readBody<T>(response);
+    const body = await readBody<T>(response);
+    if (path === "/auth/login" || path === "/auth/register") {
+      const token = (body as { csrf_token?: string } | undefined)?.csrf_token;
+      if (token) csrfToken = token;
+    }
+    if (path === "/auth/logout") csrfToken = null;
+    return body;
   }
 
   const error = await parseError(response);
@@ -137,7 +143,13 @@ async function request<T>(
       credentials: "same-origin",
     });
     if (response.ok) {
-      return readBody<T>(response);
+      const body = await readBody<T>(response);
+      if (path === "/auth/login" || path === "/auth/register") {
+        const token = (body as { csrf_token?: string } | undefined)?.csrf_token;
+        if (token) csrfToken = token;
+      }
+      if (path === "/auth/logout") csrfToken = null;
+      return body;
     }
     throw await parseError(response);
   }

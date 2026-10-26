@@ -26,11 +26,31 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r ../requirements.txt
+          python -m pip install pip-audit bandit
+      - name: Audit Python dependencies
+        run: pip-audit -r ../requirements.txt
+      - name: Scan backend for common security issues
+        run: bandit -q -r app
       - name: Verify migrations
         run: |
           flask --app wsgi db upgrade
           flask --app wsgi db downgrade base
           flask --app wsgi db upgrade
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+
+          database = Path("instance/projectpulse.sqlite3")
+          with sqlite3.connect(database) as connection:
+              tables = {row[0] for row in connection.execute(
+                  "SELECT name FROM sqlite_master WHERE type='table'")}
+          required = {"users", "organizations", "organization_memberships", "workspaces",
+                      "projects", "tasks", "account_tokens", "workspace_invitations",
+                      "notifications", "guest_imports", "alembic_version"}
+          missing = required - tables
+          if missing:
+              raise SystemExit(f"Migration did not create required tables: {sorted(missing)}")
+          PY
       - name: Seed demo accounts
         run: flask --app wsgi seed-demo
       - name: Run backend tests
@@ -50,7 +70,27 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=low
       - name: Run frontend tests
         run: npm test
       - name: Build frontend
         run: npm run build
+
+  deployment-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production compose configuration
+        env:
+          APP_DOMAIN: audit.example.test
+          PROJECTPULSE_SECRET_KEY: audit-only-secret-value-with-at-least-32-characters
+          BACKUP_PATH: /tmp/projectpulse-encrypted-backups
+          PROJECTPULSE_MAIL_HOST: smtp.example.test
+          PROJECTPULSE_MAIL_FROM: audit@example.test
+          PROJECTPULSE_OPERATOR_NAME: CI audit
+          PROJECTPULSE_SUPPORT_EMAIL: support@example.test
+          PROJECTPULSE_HOSTING_LOCATION: CI only
+          PROJECTPULSE_RETENTION_PERIOD: 30 days
+          PROJECTPULSE_DELETION_PROCESS: Account settings
+        run: docker compose config --quiet

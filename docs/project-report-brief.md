@@ -10,6 +10,8 @@ This document is a source pack for writing a detailed academic report about Proj
 
 > **Most important caution:** the repository contains files for organizations, workspaces, projects, tasks, and analytics, but those files are **not wired into the running application** and are not backed by current models, migrations, or tests. They must be described as dormant/unintegrated code, not as implemented features. See [Dormant and unintegrated code](#10-dormant-and-unintegrated-code).
 
+> **Historical snapshot notice:** this brief describes commit `871f918` from October 26, 2026. It predates the subsequent P0–P4 implementation and is not an accurate status report for the current `main` branch. Use [README.md](../README.md), [deployment guidance](deployment.md), [architecture](architecture.md), and the live source/tests for current behavior. The snapshot details below are retained only as history for the academic report.
+
 ---
 
 ## 1. How to use this brief
@@ -418,7 +420,7 @@ Do **not** claim:
 
 ### 10.3 Deployment artifacts are also stale
 
-`backend/Dockerfile` and `docs/deployment.md` describe the earlier raw-SQLite prototype (`PROJECTPULSE_*` variables, `init-db`, raw SQLite driver). They are not consistent with the current M1 configuration (`APP_ENV`, `SECRET_KEY`, `DATABASE_URL`, Flask-Migrate). Treat them as deployment notes for a previous iteration, not as evidence for the current implementation.
+`backend/Dockerfile` and `docs/deployment.md` now describe the SQLite production stack using the `PROJECTPULSE_*` configuration, Caddy HTTPS edge, scheduled backups, Flask-Migrate revisions, and the first-owner bootstrap command. The application uses SQLite for domain tables and Flask-SQLAlchemy for the user model; the core migration preserves the existing SQLite-specific triggers and schema behavior.
 
 ---
 
