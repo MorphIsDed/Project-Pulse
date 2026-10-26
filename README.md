@@ -20,6 +20,8 @@ The detailed product scope, data model, rules, phases, and evaluation plan are i
 
 Milestones M0 (platform foundation) and M1 (identity) are complete. The backend provides environment-based configuration, SQLAlchemy models with Alembic migrations, session/CSRF protection, a consistent JSON error envelope, request IDs, a database-aware health check, seeded demo accounts, and cookie-session login/logout/current-user endpoints. The frontend provides a sign-in screen and signed-in landing state. Tenancy, planning, scheduling, analytics, and export remain planned work; see the status section in [plan.md](plan.md).
 
+For a detailed implementation-status brief intended for report writing, including unimplemented modules and dormant code, see [docs/project-report-brief.md](docs/project-report-brief.md).
+
 ## Requirements
 
 - Python 3.11 or newer.
