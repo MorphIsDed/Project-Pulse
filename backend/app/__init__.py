@@ -1,6 +1,6 @@
 from pathlib import Path
 import sqlite3
-
+from app.api.auth import auth_api
 from flask import Flask, jsonify, current_app, g
 
 
@@ -45,6 +45,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     app.teardown_appcontext(close_db)
+    app.register_blueprint(auth_api)
+    app.register_blueprint(organizations_api)
+    app.register_blueprint(workspaces_api)
+    app.register_blueprint(projects_api)
+    app.register_blueprint(tasks_api)
 
     @app.get("/api/v1/health")
     def health():
@@ -133,6 +138,85 @@ def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_projects_workspace
             ON projects(workspace_id);
+            
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            parent_task_id INTEGER,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'not_started'
+                CHECK (status IN ('not_started', 'in_progress', 'blocked', 'completed')),
+            duration_work_minutes INTEGER NOT NULL DEFAULT 0
+                CHECK (duration_work_minutes >= 0),
+            progress INTEGER NOT NULL DEFAULT 0
+                CHECK (progress BETWEEN 0 AND 100),
+            priority INTEGER NOT NULL DEFAULT 3
+                CHECK (priority BETWEEN 1 AND 5),
+            constraint_type TEXT NOT NULL DEFAULT 'none'
+                CHECK (constraint_type IN (
+                    'none',
+                    'start_no_earlier_than',
+                    'start_no_later_than',
+                    'must_start_on',
+                    'finish_no_earlier_than',
+                    'finish_no_later_than',
+                    'must_finish_on'
+                )),
+            constraint_date TEXT,
+            estimate_optimistic INTEGER,
+            estimate_most_likely INTEGER,
+            estimate_pessimistic INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+            FOREIGN KEY (project_id)
+                REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_task_id)
+                REFERENCES tasks(id) ON DELETE SET NULL,
+
+            CHECK (
+                (estimate_optimistic IS NULL
+                AND estimate_most_likely IS NULL
+                AND estimate_pessimistic IS NULL)
+                OR
+                (estimate_optimistic >= 0
+                AND estimate_most_likely >= estimate_optimistic
+                AND estimate_pessimistic >= estimate_most_likely)
+            ),
+            CHECK (parent_task_id IS NULL OR parent_task_id != id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_project
+            ON tasks(project_id);
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_parent
+            ON tasks(parent_task_id);
+            
+        CREATE TABLE IF NOT EXISTS dependencies (
+            id INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            predecessor_task_id INTEGER NOT NULL,
+            successor_task_id INTEGER NOT NULL,
+            type TEXT NOT NULL CHECK (type IN ('FS', 'SS', 'FF', 'SF')),
+            lag_work_minutes INTEGER NOT NULL DEFAULT 0,
+
+            FOREIGN KEY (project_id)
+                REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (predecessor_task_id)
+                REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (successor_task_id)
+                REFERENCES tasks(id) ON DELETE CASCADE,
+
+            CHECK (predecessor_task_id != successor_task_id),
+            UNIQUE (project_id, predecessor_task_id, successor_task_id, type)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dependencies_predecessor
+            ON dependencies(predecessor_task_id);
+
+        CREATE INDEX IF NOT EXISTS idx_dependencies_successor
+            ON dependencies(successor_task_id);
         """
     )
     get_db().commit()
