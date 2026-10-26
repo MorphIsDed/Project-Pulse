@@ -18,7 +18,7 @@ The detailed product scope, data model, rules, phases, and evaluation plan are i
 
 ## Current status
 
-The initial Flask health endpoint, SQLite foundation, and React landing page are in place. The remaining roadmap features are planned work; see the status section in [plan.md](plan.md).
+The initial Flask API, SQLite foundation, and React interface are in place. Production security and container deployment scaffolding are being added; PostgreSQL and versioned schema migrations remain prerequisites before a production launch.
 
 ## Requirements
 
@@ -59,7 +59,7 @@ Open the local URL printed by Vite. Vite forwards `/api` requests to the Flask d
 
 ## Configuration and data
 
-The development SQLite database is stored under `backend/instance/`. Do not commit database files, password hashes from real accounts, environment files, or production secrets. Replace development secrets with environment-based configuration before deployment. The Flask development server is for local development only.
+The development SQLite database is stored under `backend/instance/`. Do not commit database files, password hashes from real accounts, environment files, or production secrets. Local development uses a local-only secret. Production requires `PROJECTPULSE_SECRET_KEY`, `PROJECTPULSE_TRUSTED_HOSTS`, and `PROJECTPULSE_ALLOWED_ORIGINS`; secure cookies are enforced. See [docs/deployment.md](docs/deployment.md). The Flask development server is for local development only.
 
 ## Development notes
 

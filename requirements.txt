@@ -3,6 +3,7 @@
 
 # Flask API and database schema/migrations
 Flask>=3.1,<4.0
+gunicorn>=23.0,<24.0; platform_system != "Windows"
 Flask-SQLAlchemy>=3.1,<4.0
 Flask-Migrate>=4.0,<5.0
 Flask-WTF>=1.2,<2.0
