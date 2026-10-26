@@ -23,7 +23,7 @@ SQLite is appropriate for local academic deployment and modest concurrent use. U
 
 - `backend/app/api`: thin versioned route handlers.
 - `backend/app/models` and `repositories`: persistence mapping and queries.
-- `backend/app/services`: project/task operations and authorization.
+- `backend/app/services`: identity, project/task operations, and authorization.
 - `backend/app/scheduling`: graph validation, calendar arithmetic, constraints, CPM.
 - `backend/app/analytics`: resource load, leveling preview, risk simulation.
 - `frontend/src`: navigation, project/task editing, Gantt, resources, analytics.
@@ -34,6 +34,8 @@ SQLite is appropriate for local academic deployment and modest concurrent use. U
 Users are global identities. Organizations own workspaces; workspaces own projects. Organization membership grants the base organization boundary. Workspace membership, when enabled, narrows access. Every project read and mutation must verify the caller's membership through the owning organization and any applicable workspace rule. IDs supplied by the browser are never proof of access.
 
 ## Persistence and audit conventions
+
+Persistence uses Flask-SQLAlchemy models, with Flask-Migrate/Alembic as the only schema-change path. Run `flask db upgrade` from `backend`; use batch mode for SQLite `ALTER` operations. Do not edit applied migrations.
 
 Use integer primary keys, foreign keys, unique membership pairs, and ISO 8601 dates/timestamps. Store audit timestamps in UTC. Enable SQLite foreign-key enforcement on every connection. Store schedule inputs separately from calculated dates. Store a project version and require expected-version checks for edits that can affect a schedule. Save analysis kind, input project version, parameters, summary, creator, and timestamp for reproducibility.
 
