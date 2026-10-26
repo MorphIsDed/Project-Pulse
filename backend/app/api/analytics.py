@@ -9,6 +9,7 @@ from collections import defaultdict, deque
 from datetime import date, datetime, time, timedelta
 import math
 import sqlite3
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, request, session
 
@@ -38,50 +39,50 @@ def _project_or_error(project_id: int):
     return (project, user_id), None
 
 
-def _date_add_workdays(start: date, days: int) -> date:
+def _date_add_workdays(start: date, days: int, workdays=range(5), holidays=()) -> date:
     cursor = start
     direction = 1 if days >= 0 else -1
     remaining = abs(days)
     while remaining:
         cursor += timedelta(days=direction)
-        if cursor.weekday() < 5:
+        if cursor.weekday() in workdays and cursor.isoformat() not in holidays:
             remaining -= 1
     return cursor
 
 
-def _workday_distance(start: date, finish: date) -> int:
+def _workday_distance(start: date, finish: date, workdays=range(5), holidays=()) -> int:
     direction = 1 if finish >= start else -1
     cursor = start
     count = 0
     while cursor != finish:
-        if cursor.weekday() < 5:
+        if cursor.weekday() in workdays and cursor.isoformat() not in holidays:
             count += direction
         cursor += timedelta(days=direction)
     return count
 
 
-def _offset_datetime(start: date, work_minutes: int) -> datetime:
+def _offset_datetime(start: date, work_minutes: int, workdays=range(5), holidays=(), minutes_per_day=WORKDAY_MINUTES) -> datetime:
     """Move from 09:00 on a weekday, skipping weekends and 17:00-09:00."""
     cursor = datetime.combine(start, time(9, 0))
     direction = 1 if work_minutes >= 0 else -1
     remaining = abs(work_minutes)
     while remaining:
         if direction > 0:
-            if cursor.weekday() >= 5:
-                cursor = datetime.combine(_date_add_workdays(cursor.date(), 1), time(9, 0))
+            if cursor.weekday() not in workdays or cursor.date().isoformat() in holidays:
+                cursor = datetime.combine(_date_add_workdays(cursor.date(), 1, workdays, holidays), time(9, 0))
             end = datetime.combine(cursor.date(), time(17, 0))
             if cursor >= end:
-                cursor = datetime.combine(_date_add_workdays(cursor.date(), 1), time(9, 0))
+                cursor = datetime.combine(_date_add_workdays(cursor.date(), 1, workdays, holidays), time(9, 0))
                 continue
             available = int((end - cursor).total_seconds() // 60)
             step = min(remaining, available)
             cursor += timedelta(minutes=step)
         else:
-            if cursor.weekday() >= 5:
-                cursor = datetime.combine(_date_add_workdays(cursor.date(), -1), time(17, 0))
+            if cursor.weekday() not in workdays or cursor.date().isoformat() in holidays:
+                cursor = datetime.combine(_date_add_workdays(cursor.date(), -1, workdays, holidays), time(17, 0))
             start_of_day = datetime.combine(cursor.date(), time(9, 0))
             if cursor <= start_of_day:
-                cursor = datetime.combine(_date_add_workdays(cursor.date(), -1), time(17, 0))
+                cursor = datetime.combine(_date_add_workdays(cursor.date(), -1, workdays, holidays), time(17, 0))
                 continue
             available = int((cursor - start_of_day).total_seconds() // 60)
             step = min(remaining, available)
@@ -90,28 +91,38 @@ def _offset_datetime(start: date, work_minutes: int) -> datetime:
     return cursor
 
 
-def _work_minutes_to_deadline(start: date, target_finish: date) -> int:
+def _work_minutes_to_deadline(start: date, target_finish: date, workdays=range(5), holidays=(), minutes_per_day=WORKDAY_MINUTES) -> int:
     if target_finish < start:
         return -1
-    return _workday_distance(start, target_finish + timedelta(days=1)) * WORKDAY_MINUTES
+    return _workday_distance(start, target_finish + timedelta(days=1), workdays, holidays) * minutes_per_day
 
 
-def _workday_start_offset(start: date, target: date) -> int:
-    if target.weekday() >= 5:
-        raise ValueError("Task date constraints must fall on a weekday.")
-    return _workday_distance(start, target) * WORKDAY_MINUTES
+def _workday_start_offset(start: date, target: date, workdays=range(5), holidays=(), minutes_per_day=WORKDAY_MINUTES) -> int:
+    if target.weekday() not in workdays or target.isoformat() in holidays:
+        raise ValueError("Task date constraints must fall on a configured working day.")
+    return _workday_distance(start, target, workdays, holidays) * minutes_per_day
 
 
 def _schedule(project_id: int, start_override: str | None = None):
     db = get_db()
     project = db.execute("SELECT start_date, target_finish, version FROM projects WHERE id = ?", (project_id,)).fetchone()
+    calendar_row = db.execute("SELECT timezone,weekly_rules,exceptions FROM calendars WHERE project_id=?", (project_id,)).fetchone()
+    import json
+    calendar_rules=json.loads(calendar_row["weekly_rules"]) if calendar_row else {}
+    calendar_exceptions=json.loads(calendar_row["exceptions"]) if calendar_row else {}
+    workdays=calendar_rules.get("working_days",list(range(5))); holidays=set(calendar_exceptions.get("holidays",[])); minutes_per_day=int(calendar_rules.get("minutes_per_day",WORKDAY_MINUTES))
+    add_workdays=lambda d,n:_date_add_workdays(d,n,workdays,holidays)
+    workday_distance=lambda d1,d2:_workday_distance(d1,d2,workdays,holidays)
+    offset_datetime=lambda d,n:_offset_datetime(d,n,workdays,holidays,minutes_per_day).replace(tzinfo=ZoneInfo(calendar_row["timezone"] if calendar_row else "UTC"))
+    deadline_minutes=lambda d1,d2:_work_minutes_to_deadline(d1,d2,workdays,holidays,minutes_per_day)
+    get_start_offset=lambda d1,d2:_workday_start_offset(d1,d2,workdays,holidays,minutes_per_day)
     start_text = start_override or project["start_date"] or date.today().isoformat()
     try:
         project_start = date.fromisoformat(start_text)
     except (TypeError, ValueError):
         raise ValueError("Project start must be an ISO date (YYYY-MM-DD).")
-    if project_start.weekday() >= 5:
-        project_start = _date_add_workdays(project_start, 1)
+    if project_start.weekday() not in workdays or project_start.isoformat() in holidays:
+        project_start = add_workdays(project_start, 1)
 
     tasks = [dict(row) for row in db.execute(
         "SELECT id, name, status, duration_work_minutes, progress, priority, constraint_type, constraint_date FROM tasks WHERE project_id = ? ORDER BY id",
@@ -156,8 +167,8 @@ def _schedule(project_id: int, start_override: str | None = None):
             constraint_date = date.fromisoformat(task["constraint_date"])
         except ValueError:
             raise ValueError(f"Task '{task['name']}' has an invalid constraint date.")
-        start_offset = _workday_start_offset(project_start, constraint_date)
-        finish_offset = _work_minutes_to_deadline(project_start, constraint_date)
+        start_offset = get_start_offset(project_start, constraint_date)
+        finish_offset = deadline_minutes(project_start, constraint_date)
         constraints[task["id"]] = (kind, start_offset, finish_offset)
     early_start: dict[int, int] = {}
     early_finish: dict[int, int] = {}
@@ -202,7 +213,7 @@ def _schedule(project_id: int, start_override: str | None = None):
             target_date = date.fromisoformat(project["target_finish"])
         except ValueError:
             raise ValueError("Project target finish must be an ISO date (YYYY-MM-DD).")
-        backward_boundary = _work_minutes_to_deadline(project_start, target_date)
+        backward_boundary = deadline_minutes(project_start, target_date)
         if backward_boundary < finish:
             raise ValueError("The target finish is earlier than the calculated schedule finish.")
     late_finish = {task_id: backward_boundary for task_id in by_id}
@@ -245,10 +256,10 @@ def _schedule(project_id: int, start_override: str | None = None):
         task_id = task["id"]
         es, ef = early_start[task_id], early_finish[task_id]
         ls, lf = late_start[task_id], late_finish[task_id]
-        early_start_at = _offset_datetime(project_start, es)
-        early_finish_at = _offset_datetime(project_start, ef)
-        late_start_at = _offset_datetime(project_start, ls)
-        late_finish_at = _offset_datetime(project_start, lf)
+        early_start_at = offset_datetime(project_start, es)
+        early_finish_at = offset_datetime(project_start, ef)
+        late_start_at = offset_datetime(project_start, ls)
+        late_finish_at = offset_datetime(project_start, lf)
         scheduled.append({
             **task,
             "early_start": early_start_at.date().isoformat(),
@@ -261,7 +272,7 @@ def _schedule(project_id: int, start_override: str | None = None):
             "late_finish_at": late_finish_at.isoformat(timespec="minutes"),
             "total_float_work_minutes": max(0, ls - es),
             "critical": ls <= es,
-            "duration_workdays": math.ceil(duration[task_id] / WORKDAY_MINUTES),
+            "duration_workdays": math.ceil(duration[task_id] / minutes_per_day),
         })
     return {
         "project_id": project_id,
@@ -269,8 +280,8 @@ def _schedule(project_id: int, start_override: str | None = None):
         "project_start": project_start.isoformat(),
         "start_source": "request" if start_override else "project" if project["start_date"] else "today_default",
         "target_finish": project["target_finish"],
-        "project_finish": _offset_datetime(project_start, finish).date().isoformat(),
-        "calendar": {"working_days": "Monday-Friday", "workday_start": "09:00", "workday_finish": "17:00", "minutes_per_day": WORKDAY_MINUTES, "holidays": "not configured"},
+        "project_finish": offset_datetime(project_start, finish).date().isoformat(),
+        "calendar": {"working_days": ",".join(str(x) for x in workdays), "timezone": calendar_row["timezone"] if calendar_row else "UTC", "minutes_per_day": minutes_per_day, "holidays": ",".join(sorted(holidays))},
         "tasks": scheduled,
         "dependencies": dependencies,
     }

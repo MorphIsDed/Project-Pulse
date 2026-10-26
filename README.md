@@ -18,7 +18,7 @@ The detailed product scope, data model, rules, phases, and evaluation plan are i
 
 ## Current status
 
-The initial Flask API, SQLite foundation, and React interface are in place. Production security and container deployment scaffolding are being added; PostgreSQL and versioned schema migrations remain prerequisites before a production launch.
+The Flask API, SQLite database, and React interface are in place. Review [deployment guidance](docs/deployment.md) before production use.
 
 ## Requirements
 
@@ -59,7 +59,7 @@ Open the local URL printed by Vite. Vite forwards `/api` requests to the Flask d
 
 ## Configuration and data
 
-The development SQLite database is stored under `backend/instance/`. Do not commit database files, password hashes from real accounts, environment files, or production secrets. Local development uses a local-only secret. Production requires `PROJECTPULSE_SECRET_KEY`, `PROJECTPULSE_TRUSTED_HOSTS`, and `PROJECTPULSE_ALLOWED_ORIGINS`; secure cookies are enforced. See [docs/deployment.md](docs/deployment.md). The Flask development server is for local development only.
+The SQLite database is stored under `backend/instance/` during local development. Do not commit database files, password hashes from real accounts, environment files, or production secrets. Production runs with `docker compose` and requires a unique `PROJECTPULSE_SECRET_KEY`, `APP_DOMAIN`, and an encrypted persistent `BACKUP_PATH`; the stack configures allowed origins and secure cookies. See [docs/deployment.md](docs/deployment.md). The Flask development server is for local development only.
 
 ## Development notes
 
@@ -69,3 +69,8 @@ The development SQLite database is stored under `backend/instance/`. Do not comm
 - Keep schedule inputs separate from derived dates.
 - Document any change to date, calendar, dependency, or simulation assumptions.
 - Build features in the order and acceptance criteria in `plan.md`.
+## Account, privacy, and team controls
+
+Accounts require email verification. Password recovery links and team invitations are sent through the SMTP settings in `.env`. Configure a real SMTP host, sender, operator contact, support address, hosting location, retention period, and deletion process before deployment; the production API refuses placeholder legal details. Optional Sentry reporting is enabled by setting `PROJECTPULSE_SENTRY_DSN`.
+
+Signed-in users can export account data and delete their account from Settings. Workspace admins can invite members as admins or members. Owners and admins manage invitations and project calendars; members can access project work. Task owner changes generate in-app notifications. Calendar working weekdays and holidays are applied to project schedule calculations, and schedule timestamps include the configured time zone.

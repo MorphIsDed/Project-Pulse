@@ -5,6 +5,7 @@ import secrets
 from urllib.parse import urlparse
 
 from flask import Flask, current_app, g, jsonify, request, session
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 def get_db() -> sqlite3.Connection:
@@ -14,6 +15,7 @@ def get_db() -> sqlite3.Connection:
         connection = sqlite3.connect(database_path)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 30000")
         g.db = connection
     return g.db
 
@@ -45,6 +47,7 @@ def init_db() -> None:
             email TEXT NOT NULL UNIQUE COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL,
+            email_verified_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -109,6 +112,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY,
             project_id INTEGER NOT NULL,
             parent_task_id INTEGER,
+            owner_user_id INTEGER,
             name TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'not_started'
@@ -139,6 +143,8 @@ def init_db() -> None:
                 REFERENCES projects(id) ON DELETE CASCADE,
             FOREIGN KEY (parent_task_id)
                 REFERENCES tasks(id) ON DELETE SET NULL,
+            FOREIGN KEY (owner_user_id)
+                REFERENCES users(id) ON DELETE SET NULL,
             CHECK (parent_task_id IS NULL OR parent_task_id != id),
             CHECK (
                 (estimate_optimistic IS NULL
@@ -313,6 +319,69 @@ def init_db() -> None:
         """
     )
 
+    user_columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+    if "email_verified_at" not in user_columns:
+        db.execute("ALTER TABLE users ADD COLUMN email_verified_at TEXT")
+        db.execute("UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL")
+    task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}
+    if "owner_user_id" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS account_tokens (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('email_verification', 'password_reset')),
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_account_tokens_user_kind ON account_tokens(user_id, kind);
+
+        CREATE TABLE IF NOT EXISTS auth_rate_limits (
+            bucket_key TEXT PRIMARY KEY,
+            window_started INTEGER NOT NULL,
+            attempts INTEGER NOT NULL,
+            blocked_until INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS workspace_invitations (
+            id INTEGER PRIMARY KEY,
+            organization_id INTEGER NOT NULL,
+            email TEXT NOT NULL COLLATE NOCASE,
+            role TEXT NOT NULL CHECK (role IN ('admin', 'member')),
+            token_hash TEXT NOT NULL UNIQUE,
+            invited_by INTEGER,
+            expires_at TEXT NOT NULL,
+            accepted_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+            FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_invitations_org_email ON workspace_invitations(organization_id, email);
+
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            organization_id INTEGER,
+            project_id INTEGER,
+            task_id INTEGER,
+            kind TEXT NOT NULL,
+            message TEXT NOT NULL,
+            read_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at);
+        INSERT OR IGNORE INTO schema_meta(version) VALUES (3);
+        """
+    )
+
     # Additive upgrades for databases created by the earlier starter schema.
     project_columns = {
         row["name"] for row in db.execute("PRAGMA table_info(projects)").fetchall()
@@ -358,8 +427,37 @@ def create_app(test_config: dict | None = None) -> Flask:
     secret_key = os.environ.get("PROJECTPULSE_SECRET_KEY")
     if production and not secret_key:
         raise RuntimeError("PROJECTPULSE_SECRET_KEY must be set in production.")
+    if production and (
+        len(secret_key) < 32
+        or secret_key.lower().startswith(("replace-", "change-me", "your-"))
+    ):
+        raise RuntimeError(
+            "PROJECTPULSE_SECRET_KEY must be a unique random value of at least 32 characters."
+        )
     if production and (not os.environ.get("PROJECTPULSE_TRUSTED_HOSTS") or not os.environ.get("PROJECTPULSE_ALLOWED_ORIGINS")):
         raise RuntimeError("PROJECTPULSE_TRUSTED_HOSTS and PROJECTPULSE_ALLOWED_ORIGINS must be set in production.")
+    privacy_config = {
+        "PROJECTPULSE_OPERATOR_NAME": "OPERATOR_NAME",
+        "PROJECTPULSE_SUPPORT_EMAIL": "SUPPORT_EMAIL",
+        "PROJECTPULSE_HOSTING_LOCATION": "HOSTING_LOCATION",
+        "PROJECTPULSE_RETENTION_PERIOD": "RETENTION_PERIOD",
+        "PROJECTPULSE_DELETION_PROCESS": "DELETION_PROCESS",
+    }
+    missing_privacy = [
+        variable for variable in privacy_config
+        if not os.environ.get(variable)
+        or os.environ[variable].strip().lower().startswith(("set-", "replace-", "todo"))
+    ]
+    if production and missing_privacy:
+        raise RuntimeError("Production legal/contact settings are required: " + ", ".join(missing_privacy))
+    mail_host = os.environ.get("PROJECTPULSE_MAIL_HOST")
+    mail_from = os.environ.get("PROJECTPULSE_MAIL_FROM")
+    if production and (mail_host or "").lower().startswith(("smtp.example", "example.")):
+        raise RuntimeError("Configure a real SMTP host before production startup.")
+    if production and "example.com" in (mail_from or "").lower():
+        raise RuntimeError("Configure a real sender address before production startup.")
+    if production and (not mail_host or not mail_from):
+        raise RuntimeError("PROJECTPULSE_MAIL_HOST and PROJECTPULSE_MAIL_FROM are required in production for account verification and recovery.")
     app.config.from_mapping(
         SECRET_KEY=secret_key or "local-development-secret-not-for-deployment",
         SESSION_COOKIE_HTTPONLY=True,
@@ -369,11 +467,32 @@ def create_app(test_config: dict | None = None) -> Flask:
         TRUSTED_HOSTS=[host.strip() for host in os.environ.get("PROJECTPULSE_TRUSTED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()],
         ALLOWED_ORIGINS=[origin.strip().rstrip("/") for origin in os.environ.get("PROJECTPULSE_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()],
         DATABASE=os.environ.get("PROJECTPULSE_DATABASE", str(Path(app.instance_path) / "projectpulse.sqlite3")),
+        PRODUCTION=production,
+        PUBLIC_URL=os.environ.get("PROJECTPULSE_PUBLIC_URL", "http://localhost:5173").rstrip("/"),
+        MAIL_HOST=mail_host,
+        MAIL_PORT=int(os.environ.get("PROJECTPULSE_MAIL_PORT", "587")),
+        MAIL_FROM=mail_from,
+        MAIL_USERNAME=os.environ.get("PROJECTPULSE_MAIL_USERNAME"),
+        MAIL_PASSWORD=os.environ.get("PROJECTPULSE_MAIL_PASSWORD"),
+        MAIL_USE_TLS=os.environ.get("PROJECTPULSE_MAIL_USE_TLS", "1").lower() in {"1", "true", "yes"},
+        SENTRY_DSN=os.environ.get("PROJECTPULSE_SENTRY_DSN", ""),
+        OPERATOR_NAME=os.environ.get("PROJECTPULSE_OPERATOR_NAME", "ProjectPulse operator"),
+        SUPPORT_EMAIL=os.environ.get("PROJECTPULSE_SUPPORT_EMAIL", ""),
+        HOSTING_LOCATION=os.environ.get("PROJECTPULSE_HOSTING_LOCATION", "Not specified"),
+        RETENTION_PERIOD=os.environ.get("PROJECTPULSE_RETENTION_PERIOD", "Not specified"),
+        DELETION_PROCESS=os.environ.get("PROJECTPULSE_DELETION_PROCESS", "Contact support to request deletion."),
     )
     if production and os.environ.get("PROJECTPULSE_COOKIE_SECURE", "1").lower() not in {"1", "true", "yes"}:
         raise RuntimeError("Secure session cookies cannot be disabled in production.")
     if test_config:
         app.config.update(test_config)
+
+    if production:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    if app.config.get("SENTRY_DSN"):
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(dsn=app.config["SENTRY_DSN"], integrations=[FlaskIntegration()], traces_sample_rate=0.0, send_default_pii=False)
 
     @app.before_request
     def protect_state_changes():
@@ -400,6 +519,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     from app.api.projects import projects_api
     from app.api.tasks import tasks_api
     from app.api.workspaces import workspaces_api
+    from app.api.accounts import accounts_api
+    from app.api.invitations import invitations_api
+    from app.api.notifications import notifications_api
+    from app.api.calendars import calendars_api
 
     app.register_blueprint(auth_api)
     app.register_blueprint(analytics_api)
@@ -407,6 +530,20 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(workspaces_api)
     app.register_blueprint(projects_api)
     app.register_blueprint(tasks_api)
+    app.register_blueprint(accounts_api)
+    app.register_blueprint(invitations_api)
+    app.register_blueprint(notifications_api)
+    app.register_blueprint(calendars_api)
+
+    @app.get("/api/v1/legal")
+    def legal_information():
+        return jsonify(
+            operator=current_app.config["OPERATOR_NAME"],
+            support_email=current_app.config["SUPPORT_EMAIL"],
+            hosting_location=current_app.config["HOSTING_LOCATION"],
+            retention_period=current_app.config["RETENTION_PERIOD"],
+            deletion_process=current_app.config["DELETION_PROCESS"],
+        )
 
     @app.get("/api/v1/health")
     def health():

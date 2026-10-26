@@ -39,7 +39,7 @@ def list_tasks(project_id):
 
     rows = get_db().execute(
         """
-        SELECT id, project_id, parent_task_id, name, description, status,
+        SELECT id, project_id, parent_task_id, owner_user_id, name, description, status,
                duration_work_minutes, progress, priority, constraint_type,
                constraint_date, estimate_optimistic, estimate_most_likely,
                estimate_pessimistic, created_at, updated_at
@@ -129,14 +129,15 @@ def create_task(project_id):
         cursor = db.execute(
             """
             INSERT INTO tasks (
-                project_id, parent_task_id, name, description,
+                project_id, parent_task_id, owner_user_id, name, description,
                 duration_work_minutes, priority
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id,
                 parent_task_id,
+                user_id,
                 name.strip(),
                 description,
                 duration,
@@ -153,7 +154,7 @@ def create_task(project_id):
 
     task = get_db().execute(
         """
-        SELECT id, project_id, parent_task_id, name, description, status,
+        SELECT id, project_id, parent_task_id, owner_user_id, name, description, status,
                duration_work_minutes, progress, priority, constraint_type,
                constraint_date, estimate_optimistic, estimate_most_likely,
                estimate_pessimistic, created_at, updated_at
@@ -181,7 +182,7 @@ def update_task(project_id, task_id):
     if task is None:
         return jsonify(error={"code": "not_found", "message": "Task not found."}), 404
 
-    allowed = {"name", "description", "status", "duration_work_minutes", "progress", "priority", "constraint_type", "constraint_date", "estimate_optimistic", "estimate_most_likely", "estimate_pessimistic"}
+    allowed = {"name", "description", "status", "duration_work_minutes", "progress", "priority", "constraint_type", "constraint_date", "estimate_optimistic", "estimate_most_likely", "estimate_pessimistic", "owner_user_id"}
     if set(data) - allowed:
         return jsonify(error={"code": "unsupported_field", "message": "One or more task fields cannot be updated."}), 400
     updates = {}
@@ -213,6 +214,13 @@ def update_task(project_id, task_id):
         if type(value) is not int or not 1 <= value <= 5:
             return jsonify(error={"code": "invalid_priority", "message": "Priority must be an integer from 1 to 5."}), 400
         updates["priority"] = value
+    if "owner_user_id" in data:
+        value=data["owner_user_id"]
+        if value is not None:
+            if type(value) is not int:return jsonify(error={"code":"invalid_owner","message":"Choose a member of this workspace."}),400
+            valid=db.execute("SELECT 1 FROM projects p JOIN workspaces w ON w.id=p.workspace_id JOIN organization_memberships m ON m.organization_id=w.organization_id WHERE p.id=? AND m.user_id=?",(project_id,value)).fetchone()
+            if not valid:return jsonify(error={"code":"invalid_owner","message":"Choose a member of this workspace."}),400
+        updates["owner_user_id"]=value
     if "constraint_type" in data:
         value = data["constraint_type"]
         allowed_constraints = ("none", "start_no_earlier_than", "start_no_later_than", "must_start_on", "finish_no_earlier_than", "finish_no_later_than", "must_finish_on")
@@ -243,14 +251,17 @@ def update_task(project_id, task_id):
 
     assignments = ", ".join(f"{field} = ?" for field in updates)
     try:
+        previous_owner=task["owner_user_id"]
         db.execute(f"UPDATE tasks SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?", [*updates.values(), task_id, project_id])
+        if "owner_user_id" in updates and updates["owner_user_id"] and updates["owner_user_id"] != previous_owner:
+            db.execute("INSERT INTO notifications(user_id,project_id,task_id,kind,message) VALUES(?,?,?,'task_assigned',?)",(updates["owner_user_id"],project_id,task_id,f"You were assigned to {task['name']}"))
         db.execute("UPDATE projects SET version = version + 1 WHERE id = ?", (project_id,))
         db.commit()
     except sqlite3.IntegrityError:
         db.rollback()
         return jsonify(error={"code": "task_update_failed", "message": "Could not update this task."}), 400
     updated = db.execute(
-        """SELECT id, project_id, parent_task_id, name, description, status,
+        """SELECT id, project_id, parent_task_id, owner_user_id, name, description, status,
                   duration_work_minutes, progress, priority, constraint_type,
                   constraint_date, estimate_optimistic, estimate_most_likely,
                   estimate_pessimistic, created_at, updated_at

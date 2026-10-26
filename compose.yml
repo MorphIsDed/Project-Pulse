@@ -1,0 +1,88 @@
+services:
+  api:
+    image: projectpulse-api:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      PROJECTPULSE_ENV: production
+      PROJECTPULSE_SECRET_KEY: ${PROJECTPULSE_SECRET_KEY:?Set a random PROJECTPULSE_SECRET_KEY in .env}
+      PROJECTPULSE_TRUSTED_HOSTS: ${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      PROJECTPULSE_ALLOWED_ORIGINS: https://${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      PROJECTPULSE_COOKIE_SECURE: "1"
+      PROJECTPULSE_DATABASE: /data/projectpulse.sqlite3
+      PROJECTPULSE_PUBLIC_URL: https://${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      PROJECTPULSE_MAIL_HOST: ${PROJECTPULSE_MAIL_HOST:?Set SMTP server in .env}
+      PROJECTPULSE_MAIL_PORT: ${PROJECTPULSE_MAIL_PORT:-587}
+      PROJECTPULSE_MAIL_FROM: ${PROJECTPULSE_MAIL_FROM:?Set sender address in .env}
+      PROJECTPULSE_MAIL_USERNAME: ${PROJECTPULSE_MAIL_USERNAME:-}
+      PROJECTPULSE_MAIL_PASSWORD: ${PROJECTPULSE_MAIL_PASSWORD:-}
+      PROJECTPULSE_MAIL_USE_TLS: ${PROJECTPULSE_MAIL_USE_TLS:-1}
+      PROJECTPULSE_SENTRY_DSN: ${PROJECTPULSE_SENTRY_DSN:-}
+      PROJECTPULSE_OPERATOR_NAME: ${PROJECTPULSE_OPERATOR_NAME:?Set operator name in .env}
+      PROJECTPULSE_SUPPORT_EMAIL: ${PROJECTPULSE_SUPPORT_EMAIL:?Set support address in .env}
+      PROJECTPULSE_HOSTING_LOCATION: ${PROJECTPULSE_HOSTING_LOCATION:?Set hosting location in .env}
+      PROJECTPULSE_RETENTION_PERIOD: ${PROJECTPULSE_RETENTION_PERIOD:?Set retention period in .env}
+      PROJECTPULSE_DELETION_PROCESS: ${PROJECTPULSE_DELETION_PROCESS:?Set deletion process in .env}
+    volumes:
+      - projectpulse-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Caddy.Dockerfile
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backup:
+    image: projectpulse-api:local
+    command: ["python", "-m", "app.backup", "backup-loop"]
+    environment:
+      PROJECTPULSE_DATABASE: /data/projectpulse.sqlite3
+      PROJECTPULSE_BACKUP_DIR: /backups
+      PROJECTPULSE_BACKUP_INTERVAL_SECONDS: ${PROJECTPULSE_BACKUP_INTERVAL_SECONDS:-86400}
+      PROJECTPULSE_BACKUP_RETENTION_DAYS: ${PROJECTPULSE_BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - projectpulse-data:/data:ro
+      - ${BACKUP_PATH:?Set BACKUP_PATH to a persistent encrypted backup location}:/backups
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  restore:
+    image: projectpulse-api:local
+    profiles: ["maintenance"]
+    entrypoint: ["python", "-m", "app.backup"]
+    environment:
+      PROJECTPULSE_DATABASE: /data/projectpulse.sqlite3
+    volumes:
+      - projectpulse-data:/data
+      - ${BACKUP_PATH:?Set BACKUP_PATH to a persistent encrypted backup location}:/backups:ro
+
+volumes:
+  projectpulse-data:
+  caddy-data:
+  caddy-config:

@@ -1,11 +1,10 @@
 # ProjectPulse Python dependencies
 # Install from the repository root with: python -m pip install -r requirements.txt
 
-# Flask API and database schema/migrations
+# Flask API and SQLite database
 Flask>=3.1,<4.0
+sentry-sdk[flask]>=2.0,<3.0
 gunicorn>=23.0,<24.0; platform_system != "Windows"
-Flask-SQLAlchemy>=3.1,<4.0
-Flask-Migrate>=4.0,<5.0
 Flask-WTF>=1.2,<2.0
 Flask-Login>=0.6,<1.0
 python-dotenv>=1.0,<2.0

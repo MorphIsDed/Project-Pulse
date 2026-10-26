@@ -1,313 +1,667 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
+
+
 type User = { id: number; email: string; display_name: string };
+
 type Organization = { id: number; name: string; role: string };
+
 type Workspace = { id: number; organization_id: number; name: string };
+
 type Project = { id: number; workspace_id: number; name: string; status: string; start_date?: string | null; target_finish?: string | null; version?: number; created_at?: string };
+
 type Task = { id: number; project_id: number; parent_task_id: number | null; name: string; description: string; status: "not_started" | "in_progress" | "blocked" | "completed"; duration_work_minutes: number; progress: number; priority: number; created_at: string; updated_at: string };
+
 type ScheduledTask = Task & { early_start: string; early_finish: string; early_start_at: string; early_finish_at: string; late_start: string; late_finish: string; total_float_work_minutes: number; critical: boolean; duration_workdays: number };
+
 type ProjectSchedule = { project_id: number; project_version: number; project_start: string; start_source: string; target_finish: string | null; project_finish: string; calendar: { working_days: string; minutes_per_day: number; holidays: string }; tasks: ScheduledTask[]; dependencies: { id: number; predecessor_task_id: number; successor_task_id: number; type: string; lag_work_minutes: number }[] };
+
 type Workload = { project_id: number; project_version: number; resources: { id: number; name: string; resource_type: string; capacity_units: number; assignments: { id: number; task_id: number; resource_id: number; units: number; work_minutes_per_day: number | null; task_name: string }[]; days: { date: string; assigned_units: number; capacity_units: number; tasks: { task_id: number; task_name: string; units: number }[]; overloaded: boolean }[] }[]; overloads: { resource_id: number; resource_name: string; date: string; assigned_units: number; capacity_units: number; overloaded: boolean; tasks: { task_id: number; task_name: string; units: number }[] }[] };
+
 type ProjectInsights = { project_id: number; project_version: number; total_tasks: number; completed_tasks: number; average_progress: number; status_counts: Record<Task["status"], number>; estimated_work_minutes: number; critical_tasks: number[]; project_start: string; project_finish: string };
+
 type ModalKind = "organization" | "workspace" | "project" | "task" | "resource" | "assignment" | "dependency";
+
 type View = "Overview" | "Projects" | "Timeline" | "Workload" | "Insights" | "Settings";
+
 type AppMode = "welcome" | "guest";
-type PolicyPage = "privacy" | "cookies" | null;
+
+  type PolicyPage = "privacy" | "cookies" | "terms" | null;
+
 type IconName = "grid" | "layers" | "settings" | "search" | "bell" | "plus" | "chevron" | "logout" | "close" | "check" | "clock" | "more" | "arrow" | "calendar" | "people" | "chart";
 
+
+
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+
   const paths: Record<IconName, ReactNode> = {
+
     grid: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+
     layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></>,
+
     settings: <><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1a1.7 1.7 0 0 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.3a1.7 1.7 0 0 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 0 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9h-.3a1.7 1.7 0 0 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 0 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2v-.3a1.7 1.7 0 0 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 0 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.3a1.7 1.7 0 0 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/></>,
+
     search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></>,
+
     plus: <><path d="M12 5v14M5 12h14"/></>,
+
     chevron: <path d="m9 18 6-6-6-6"/>,
+
     logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
+
     close: <><path d="m18 6-12 12M6 6l12 12"/></>,
+
     check: <path d="m5 12 4 4L19 6"/>,
+
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+
     more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
+
     arrow: <><path d="M7 17 17 7M7 7h10v10"/></>,
+
     calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
+
     people: <><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
+
     chart: <><path d="M3 3v18h18"/><path d="m7 14 4-4 4 3 6-7"/></>,
+
   };
+
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+
 }
+
+
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+
   const method = (init?.method ?? (init?.body ? "POST" : "GET")).toUpperCase();
+
   const csrf = method === "GET" || method === "HEAD" ? undefined : (await fetch("/api/v1/csrf", { credentials: "include" }).then((r) => r.json())).token as string;
+
   const response = await fetch(path, { ...init, credentials: "include", headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(csrf ? { "X-CSRF-Token": csrf } : {}), ...init?.headers } });
+
   if (!response.ok) {
+
     let message = `Request failed (${response.status})`;
+
     try { const body = await response.json(); message = body.error?.message ?? message; } catch { /* response has no JSON body */ }
+
     throw new Error(message);
+
   }
+
   if (response.status === 204) return undefined as T;
+
   return response.json() as Promise<T>;
+
 }
 
+
+
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "PP";
+
 const prettyStatus = (status: Task["status"]) => ({ not_started: "Not started", in_progress: "In progress", blocked: "Blocked", completed: "Complete" })[status];
+
 const formatWorkMinutes = (minutes: number) => minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}` : `${minutes}m`;
+
 const primaryViews: { label: View; icon: IconName }[] = [{ label: "Overview", icon: "grid" }, { label: "Projects", icon: "layers" }, { label: "Timeline", icon: "calendar" }, { label: "Workload", icon: "people" }, { label: "Insights", icon: "chart" }];
 
+
+
 export default function App() {
+
   const [user, setUser] = useState<User | null>(null);
+
   const [authChecked, setAuthChecked] = useState(false);
+
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+
   const [projects, setProjects] = useState<Project[]>([]);
+
   const [tasks, setTasks] = useState<Task[]>([]);
+
   const [schedule, setSchedule] = useState<ProjectSchedule | null>(null);
+
   const [workload, setWorkload] = useState<Workload | null>(null);
+
   const [insights, setInsights] = useState<ProjectInsights | null>(null);
+
   const [organizationId, setOrganizationId] = useState<number | "">("");
+
   const [workspaceId, setWorkspaceId] = useState<number | "">("");
+
   const [projectId, setProjectId] = useState<number | "">("");
+
   const [busy, setBusy] = useState(false);
+
   const [pageLoading, setPageLoading] = useState(false);
+
   const [error, setError] = useState("");
+
   const [authError, setAuthError] = useState("");
+
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
+
   const [modal, setModal] = useState<ModalKind | null>(null);
+
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
   const [filter, setFilter] = useState("");
+
   const [notice, setNotice] = useState(false);
+  const [notifications, setNotifications] = useState<{id:number;message:string;read_at:string|null;created_at:string}[]>([]);
+
   const [view, setView] = useState<View>("Overview");
+
   const [mode, setMode] = useState<AppMode>("welcome");
+
   const [guestReady, setGuestReady] = useState(false);
+
   const [authOpen, setAuthOpen] = useState(false);
+
   const [pendingView, setPendingView] = useState<View | null>(null);
+
   const [policyPage, setPolicyPage] = useState<PolicyPage>(null);
+
   const [cookieNotice, setCookieNotice] = useState(() => sessionStorage.getItem("projectpulse-cookie-notice") !== "seen");
 
+
+
   useEffect(() => { api<{ user: User }>("/api/v1/auth/me").then((data) => setUser(data.user)).catch(() => setUser(null)).finally(() => setAuthChecked(true)); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const verification = params.get("verify_token");
+    const reset = params.get("reset_token");
+    if (verification) api("/api/v1/auth/verify-email", { method: "POST", body: JSON.stringify({ token: verification }) }).then(() => window.alert("Email verified. You can now sign in.")).catch((e: Error) => window.alert(e.message)).finally(() => { params.delete("verify_token"); history.replaceState({}, "", `${location.pathname}${params.size ? `?${params}` : ""}`); });
+    if (reset) {
+      const password = window.prompt("Choose a new password with at least 10 characters");
+      if (password) api("/api/v1/auth/reset-password", { method: "POST", body: JSON.stringify({ token: reset, password }) }).then(() => window.alert("Password updated. You can sign in now.")).catch((e: Error) => window.alert(e.message)).finally(() => { params.delete("reset_token"); history.replaceState({}, "", `${location.pathname}${params.size ? `?${params}` : ""}`); });
+    }
+  }, []);
+  useEffect(() => {
+    const token=new URLSearchParams(window.location.search).get("invite_token");
+    if(!user||!token)return;
+    api<{organization_id:number}>("/api/v1/invitations/accept",{method:"POST",body:JSON.stringify({token})}).then(async()=>{window.alert("Invitation accepted. Reload to see the workspace.");await loadOrganizations();}).catch((e:Error)=>window.alert(e.message)).finally(()=>{const params=new URLSearchParams(window.location.search);params.delete("invite_token");history.replaceState({},"",`${location.pathname}${params.size?`?${params}`:""}`);});
+  },[user]);
+
+
 
   useEffect(() => {
+
     if (user || mode !== "guest" || guestReady) return;
+
     try {
+
       const saved = sessionStorage.getItem("projectpulse-guest-workspace");
+
       if (saved) {
+
         const data = JSON.parse(saved) as { organizations?: Organization[]; workspaces?: Workspace[]; projects?: Project[]; tasks?: Task[]; organizationId?: number | ""; workspaceId?: number | ""; projectId?: number | "" };
+
         setOrganizations(data.organizations ?? []); setWorkspaces(data.workspaces ?? []); setProjects(data.projects ?? []); setTasks(data.tasks ?? []);
+
         setOrganizationId(data.organizationId ?? ""); setWorkspaceId(data.workspaceId ?? ""); setProjectId(data.projectId ?? "");
+
       }
+
     } catch { sessionStorage.removeItem("projectpulse-guest-workspace"); }
+
     setGuestReady(true);
+
   }, [user, mode, guestReady]);
+
   useEffect(() => {
+
     if (user || mode !== "guest" || !guestReady) return;
+
     sessionStorage.setItem("projectpulse-guest-workspace", JSON.stringify({ organizations, workspaces, projects, tasks, organizationId, workspaceId, projectId }));
+
   }, [user, mode, guestReady, organizations, workspaces, projects, tasks, organizationId, workspaceId, projectId]);
 
+
+
   const loadOrganizations = useCallback(async () => {
+
     if (!user) return;
+
     const data = await api<{ organizations: Organization[] }>("/api/v1/organizations");
+
     setOrganizations(data.organizations);
+
     setOrganizationId((current) => data.organizations.some((item) => item.id === current) ? current : data.organizations[0]?.id ?? "");
+
   }, [user]);
 
+
+
   useEffect(() => { if (user) loadOrganizations().catch((reason: Error) => setError(reason.message)); }, [user, loadOrganizations]);
+
   useEffect(() => {
+
     if (!user) { if (mode !== "guest") { setWorkspaces([]); setWorkspaceId(""); } return; }
+
     if (!organizationId) { setWorkspaces([]); setWorkspaceId(""); return; }
+
     let active = true;
+
     api<{ workspaces: Workspace[] }>(`/api/v1/organizations/${organizationId}/workspaces`).then((data) => { if (!active) return; setWorkspaces(data.workspaces); setWorkspaceId((current) => data.workspaces.some((item) => item.id === current) ? current : data.workspaces[0]?.id ?? ""); }).catch((reason: Error) => { if (active) setError(reason.message); });
+
     return () => { active = false; };
+
   }, [user, mode, organizationId]);
+
   useEffect(() => {
+
     if (!user) { if (mode !== "guest") { setProjects([]); setProjectId(""); } return; }
+
     if (!workspaceId) { setProjects([]); setProjectId(""); return; }
+
     let active = true;
+
     api<{ projects: Project[] }>(`/api/v1/workspaces/${workspaceId}/projects`).then((data) => { if (!active) return; setProjects(data.projects); setProjectId((current) => data.projects.some((item) => item.id === current) ? current : data.projects[0]?.id ?? ""); }).catch((reason: Error) => { if (active) setError(reason.message); });
+
     return () => { active = false; };
+
   }, [user, mode, workspaceId]);
+
   useEffect(() => {
+
     if (!user) { if (mode !== "guest") { setTasks([]); setPageLoading(false); } return; }
+
     if (!projectId) { setTasks([]); setPageLoading(false); return; }
+
     let active = true;
+
     setTasks([]);
+
     setPageLoading(true); setError("");
+
     api<{ tasks: Task[] }>(`/api/v1/projects/${projectId}/tasks`).then((data) => { if (active) setTasks(data.tasks); }).catch((reason: Error) => { if (active) setError(reason.message); }).finally(() => { if (active) setPageLoading(false); });
+
     return () => { active = false; };
+
   }, [user, mode, projectId]);
+
   useEffect(() => {
+
     if (!user) { setSchedule(null); setWorkload(null); setInsights(null); return; }
+
     if (!projectId) { setSchedule(null); setWorkload(null); setInsights(null); return; }
+
     let active = true;
+
     setSchedule(null); setWorkload(null); setInsights(null);
+
     Promise.all([
+
       api<{ schedule: ProjectSchedule }>(`/api/v1/projects/${projectId}/schedule`),
+
       api<{ workload: Workload }>(`/api/v1/projects/${projectId}/workload`),
+
       api<{ insights: ProjectInsights }>(`/api/v1/projects/${projectId}/insights`),
+
     ]).then(([scheduleResult, workloadResult, insightsResult]) => { if (active) { setSchedule(scheduleResult.schedule); setWorkload(workloadResult.workload); setInsights(insightsResult.insights); } }).catch((reason: Error) => { if (active) setError(reason.message); });
+
     return () => { active = false; };
+
   }, [user, projectId, tasks]);
 
+
+
+  useEffect(() => {
+
+    const currentVersion = schedule?.project_version ?? workload?.project_version ?? insights?.project_version;
+
+    if (currentVersion === undefined) return;
+
+    setProjects((items) => items.map((project) => project.id === projectId && project.version !== currentVersion
+
+      ? { ...project, version: currentVersion }
+
+      : project));
+
+  }, [projectId, schedule?.project_version, workload?.project_version, insights?.project_version]);
+
+
+
   const selectedOrganization = organizations.find((item) => item.id === organizationId);
+
   const selectedWorkspace = workspaces.find((item) => item.id === workspaceId);
+
   const selectedProject = projects.find((item) => item.id === projectId);
+
   const filteredTasks = useMemo(() => tasks.filter((task) => task.name.toLowerCase().includes(filter.toLowerCase())), [tasks, filter]);
+
   const completeCount = tasks.filter((task) => task.status === "completed").length;
+
   const progress = tasks.length ? Math.round(tasks.reduce((sum, task) => sum + task.progress, 0) / tasks.length) : 0;
 
+
+
   const openView = (next: View) => {
+
     if (!user && ["Timeline", "Workload", "Insights", "Settings"].includes(next)) {
+
       setPendingView(next); setAuthMode("login"); setAuthError(""); setAuthOpen(true); return;
+
     }
+
     setView(next);
+
   };
+
   const enterGuest = () => { setOrganizations([]); setWorkspaces([]); setProjects([]); setTasks([]); setOrganizationId(""); setWorkspaceId(""); setProjectId(""); setView("Overview"); setGuestReady(false); setMode("guest"); };
 
-  const authenticate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); setAuthError("");
-    const form = new FormData(event.currentTarget);
-    const email = String(form.get("email") ?? ""); const password = String(form.get("password") ?? "");
-    try {
-      if (authMode === "register") {
-        const display_name = String(form.get("display_name") ?? "");
-        await api("/api/v1/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name }) });
-      }
-      const result = await api<{ user: User }>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-      const guest = mode === "guest" && organizations.length > 0;
-      if (guest) {
-        try {
-          const org = await api<{ organization: Organization }>("/api/v1/organizations", { method: "POST", body: JSON.stringify({ name: organizations[0].name }) });
-          const workspace = await api<{ workspace: Workspace }>(`/api/v1/organizations/${org.organization.id}/workspaces`, { method: "POST", body: JSON.stringify({ name: workspaces[0]?.name ?? "My workspace" }) });
-          
-          for (const project of projects) {
-            const created = await api<{ project: Project }>(`/api/v1/workspaces/${workspace.workspace.id}/projects`, { method: "POST", body: JSON.stringify({ name: project.name, status: project.status }) });
 
-            for (const task of tasks.filter((item) => item.project_id === project.id)) {
-              const savedTask = await api<{ task: Task }>(`/api/v1/projects/${created.project.id}/tasks`, { method: "POST", body: JSON.stringify({ name: task.name, description: task.description, duration_work_minutes: task.duration_work_minutes }) });
-              if (task.status !== "not_started" || task.progress > 0) await api(`/api/v1/projects/${created.project.id}/tasks/${savedTask.task.id}`, { method: "PATCH", body: JSON.stringify({ status: task.status, progress: task.progress }) });
-            }
-          }
-          sessionStorage.removeItem("projectpulse-guest-workspace");
-          setMode("welcome");
-        } catch (reason) { setError(`You signed in, but this session’s work could not be fully saved: ${(reason as Error).message}`); }
+
+  const authenticate = async (event: FormEvent<HTMLFormElement>) => {
+
+    event.preventDefault(); setBusy(true); setAuthError("");
+
+    const form = new FormData(event.currentTarget);
+
+    const email = String(form.get("email") ?? ""); const password = String(form.get("password") ?? "");
+
+    try {
+
+      if (authMode === "register") {
+
+        const display_name = String(form.get("display_name") ?? "");
+
+        await api("/api/v1/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name }) });
+
       }
+
+      const result = await api<{ user: User }>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+
+      const guest = mode === "guest" && organizations.length > 0;
+
+      if (guest) {
+
+        try {
+
+          const draftId = sessionStorage.getItem("projectpulse-guest-draft-id") ?? crypto.randomUUID();
+
+          sessionStorage.setItem("projectpulse-guest-draft-id", draftId);
+
+          await api("/api/v1/account/import-guest", { method: "POST", body: JSON.stringify({ draft_id: draftId, snapshot: { organizations, workspaces, projects, tasks } }) });
+
+          sessionStorage.removeItem("projectpulse-guest-workspace");
+
+          sessionStorage.removeItem("projectpulse-guest-draft-id");
+
+          setMode("welcome");
+
+        } catch (reason) { setAuthError(`Your account was signed in, but this guest session was not saved. Your session data is still on this device. Sign in again to retry: ${(reason as Error).message}`); return; }
+
+      }
+
       setUser(result.user); setAuthOpen(false);
+
       if (pendingView) { setView(pendingView); setPendingView(null); }
+
     } catch (reason) { setAuthError((reason as Error).message); } finally { setBusy(false); }
+
   };
+
+
 
   const saveModal = async (event: FormEvent<HTMLFormElement>) => {
+
     event.preventDefault(); if (!modal) return;
+
     const form = new FormData(event.currentTarget); const name = String(form.get("name") ?? "").trim();
+
     if (modal !== "assignment" && !name) return;
+
     setBusy(true); setError("");
+
     try {
+
       if (!user && mode === "guest" && modal === "organization") {
+
         const id = Date.now(); setOrganizations([{ id, name, role: "guest" }]); setOrganizationId(id); setWorkspaces([]); setWorkspaceId(""); setProjects([]); setProjectId("");
+
       } else if (!user && mode === "guest" && modal === "workspace") {
+
         const id = Date.now(); setWorkspaces((items) => [...items, { id, organization_id: Number(organizationId), name }]); setWorkspaceId(id); setProjects([]); setProjectId("");
+
       } else if (!user && mode === "guest" && modal === "project") {
+
         const id = Date.now(); setProjects((items) => [...items, { id, workspace_id: Number(workspaceId), name, status: "active" }]); setProjectId(id);
-      } else if (!user && mode === "guest" && modal === "task") {
+
+      } else if (!user && mode === "guest" && modal === "task" && !editingTask) {
+
         const id = Date.now(); const now = new Date().toISOString();
+
         setTasks((items) => [...items, { id, project_id: Number(projectId), parent_task_id: null, name, description: String(form.get("description") ?? ""), status: "not_started", duration_work_minutes: Number(form.get("duration") ?? 0), progress: 0, priority: 0, created_at: now, updated_at: now }]);
-      } else if (!user && mode === "guest") {
-        setAuthMode("login"); setAuthOpen(true); setPendingView("Workload"); setModal(null); return;
-      } else if (modal === "organization") {
-        const result = await api<{ organization: Organization }>("/api/v1/organizations", { method: "POST", body: JSON.stringify({ name }) });
-        await loadOrganizations(); setOrganizationId(result.organization.id);
-      } else if (modal === "workspace" && organizationId) {
-        const result = await api<{ workspace: Workspace }>(`/api/v1/organizations/${organizationId}/workspaces`, { method: "POST", body: JSON.stringify({ name }) });
-        setWorkspaces((items) => [...items, result.workspace]); setWorkspaceId(result.workspace.id);
-      } else if (modal === "project" && workspaceId) {
-        const result = await api<{ project: Project }>(`/api/v1/workspaces/${workspaceId}/projects`, { method: "POST", body: JSON.stringify({ name }) });
-        setProjects((items) => [...items, result.project]); setProjectId(result.project.id);
-      } else if (modal === "task" && projectId) {
+
+      } else if (modal === "task" && editingTask && projectId) {
+
         const duration = Number(form.get("duration"));
+
+        const fields = { name, description: String(form.get("description") ?? ""), duration_work_minutes: Number.isFinite(duration) ? duration : 0 };
+
+        if (user) {
+
+          const result = await api<{ task: Task }>(`/api/v1/projects/${projectId}/tasks/${editingTask.id}`, { method: "PATCH", body: JSON.stringify(fields) });
+
+          setTasks((items) => items.map((item) => item.id === result.task.id ? result.task : item));
+
+        } else {
+
+          setTasks((items) => items.map((item) => item.id === editingTask.id ? { ...item, ...fields, updated_at: new Date().toISOString() } : item));
+
+        }
+
+      } else if (!user && mode === "guest") {
+
+        setAuthMode("login"); setAuthOpen(true); setPendingView("Workload"); setModal(null); return;
+
+      } else if (modal === "organization") {
+
+        const result = await api<{ organization: Organization }>("/api/v1/organizations", { method: "POST", body: JSON.stringify({ name }) });
+
+        await loadOrganizations(); setOrganizationId(result.organization.id);
+
+      } else if (modal === "workspace" && organizationId) {
+
+        const result = await api<{ workspace: Workspace }>(`/api/v1/organizations/${organizationId}/workspaces`, { method: "POST", body: JSON.stringify({ name }) });
+
+        setWorkspaces((items) => [...items, result.workspace]); setWorkspaceId(result.workspace.id);
+
+      } else if (modal === "project" && workspaceId) {
+
+        const result = await api<{ project: Project }>(`/api/v1/workspaces/${workspaceId}/projects`, { method: "POST", body: JSON.stringify({ name }) });
+
+        setProjects((items) => [...items, result.project]); setProjectId(result.project.id);
+
+      } else if (modal === "task" && projectId) {
+
+        const duration = Number(form.get("duration"));
+
         const result = await api<{ task: Task }>(`/api/v1/projects/${projectId}/tasks`, { method: "POST", body: JSON.stringify({ name, description: String(form.get("description") ?? ""), duration_work_minutes: Number.isFinite(duration) ? duration : 0 }) });
+
         setTasks((items) => [...items, result.task]);
+
       } else if (modal === "resource" && projectId) {
+
         await api(`/api/v1/projects/${projectId}/resources`, { method: "POST", body: JSON.stringify({ name, resource_type: String(form.get("resource_type") ?? "person"), capacity_units: Number(form.get("capacity_units") ?? 1) }) });
+
         const result = await api<{ workload: Workload }>(`/api/v1/projects/${projectId}/workload`);
+
         setWorkload(result.workload);
+
       } else if (modal === "assignment" && projectId) {
+
         const taskId = Number(form.get("task_id"));
+
         await api(`/api/v1/projects/${projectId}/tasks/${taskId}/assignments`, { method: "POST", body: JSON.stringify({ resource_id: Number(form.get("resource_id")), units: Number(form.get("units")) }) });
+
         const result = await api<{ workload: Workload }>(`/api/v1/projects/${projectId}/workload`);
+
         setWorkload(result.workload);
+
       } else if (modal === "dependency" && projectId) {
+
         const predecessor = Number(form.get("predecessor_task_id"));
+
         const successor = Number(form.get("successor_task_id"));
+
         if (predecessor === successor) throw new Error("Choose two different tasks for a dependency.");
+
         await api(`/api/v1/projects/${projectId}/dependencies`, { method: "POST", body: JSON.stringify({ predecessor_task_id: predecessor, successor_task_id: successor, type: String(form.get("dependency_type")), lag_work_minutes: Number(form.get("lag_work_minutes")) }) });
+
         const [scheduleResult, workloadResult, insightsResult] = await Promise.all([api<{ schedule: ProjectSchedule }>(`/api/v1/projects/${projectId}/schedule`), api<{ workload: Workload }>(`/api/v1/projects/${projectId}/workload`), api<{ insights: ProjectInsights }>(`/api/v1/projects/${projectId}/insights`)]);
+
         setSchedule(scheduleResult.schedule); setWorkload(workloadResult.workload); setInsights(insightsResult.insights);
+
       }
-      setModal(null);
+
+      setModal(null); setEditingTask(null);
+
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+
   };
 
+
+
   const saveProjectDates = async (event: FormEvent<HTMLFormElement>) => {
+
     event.preventDefault();
+
     if (!selectedProject) return;
+
     const form = new FormData(event.currentTarget);
+
     setBusy(true); setError("");
+
     try {
+
       const result = await api<{ project: Project }>(`/api/v1/projects/${selectedProject.id}`, { method: "PATCH", body: JSON.stringify({ start_date: String(form.get("start_date") ?? "") || null, target_finish: String(form.get("target_finish") ?? "") || null, version: selectedProject.version }) });
+
       setProjects((items) => items.map((project) => project.id === result.project.id ? result.project : project));
+
       const refreshed = await Promise.all([api<{ schedule: ProjectSchedule }>(`/api/v1/projects/${selectedProject.id}/schedule`), api<{ insights: ProjectInsights }>(`/api/v1/projects/${selectedProject.id}/insights`), api<{ workload: Workload }>(`/api/v1/projects/${selectedProject.id}/workload`)]);
+
       setSchedule(refreshed[0].schedule); setInsights(refreshed[1].insights); setWorkload(refreshed[2].workload);
+
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
+
   };
+
+
 
   const logout = async () => { try { await api("/api/v1/auth/logout", { method: "POST" }); } finally { setUser(null); setOrganizations([]); setProjects([]); setTasks([]); setOrganizationId(""); setWorkspaceId(""); setProjectId(""); } };
 
+
+
   const projectListContent = <section className="page-section"><div className="section-page-heading"><div><span className="section-eyebrow">WORKSPACE</span><h2>Projects</h2><p>{selectedWorkspace ? `Projects in ${selectedWorkspace.name}` : "Choose a workspace to see its projects."}</p></div>{workspaceId && <button className="button button-primary" onClick={() => setModal("project")}><Icon name="plus" size={15}/> New project</button>}</div>{projects.length ? <div className="project-card-grid">{projects.map((project) => { const selected = project.id === projectId; return <button className={`workspace-project-card ${selected ? "project-card-selected" : ""}`} key={project.id} onClick={() => { setProjectId(project.id); setView("Overview"); }}><span className="project-card-top"><span className={`project-dot ${project.status === "completed" ? "dot-complete" : "dot-live"}`}/><span className={`project-state project-state-${project.status}`}>{project.status.replaceAll("_", " ")}</span></span><strong>{project.name}</strong><small>{project.created_at ? `Created ${new Date(project.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}` : "Just created"}</small><span className="project-card-link">Open project <Icon name="arrow" size={13}/></span></button>; })}</div> : <div className="page-empty"><span className="empty-emblem"><Icon name="layers" size={21}/></span><strong>No projects in this workspace</strong><span>Create a project to start organizing work.</span>{workspaceId && <button className="button button-outline" onClick={() => setModal("project")}><Icon name="plus" size={14}/> Create project</button>}</div>}</section>;
+
+
 
   const timelineContent = <section className="page-section"><div className="section-page-heading"><div><span className="section-eyebrow">{selectedProject?.name ?? "PROJECT"}</span><h2>Schedule & critical path</h2><p>{schedule ? `${schedule.project_start} — ${schedule.project_finish}` : "Calculated from saved task durations and dependencies."}</p></div>{selectedProject && <div className="workload-actions"><button className="button button-outline" onClick={() => setModal("dependency")} disabled={tasks.length < 2}>Add dependency</button><button className="button button-primary" onClick={() => setModal("task")}><Icon name="plus" size={15}/> New task</button></div>}</div>{schedule && <div className="capability-note"><Icon name="calendar" size={17}/><span><strong>Weekdays · 09:00–17:00 · 8 hours per day.</strong> {schedule.start_source === "today_default" ? "No project start date is saved, so this preview begins today." : `Schedule begins ${schedule.project_start}.`} Dates are derived from task durations and dependencies; project holidays aren’t configured.</span></div>}{!selectedProject ? <div className="page-empty"><span>Select a project from the sidebar to view its schedule.</span><button className="button button-outline" onClick={() => setView("Projects")}>Browse projects</button></div> : pageLoading || !schedule ? <div className="page-empty">Calculating project schedule…</div> : tasks.length ? <><div className="duration-table"><div className="duration-table-head schedule-table-head"><span>TASK</span><span>STATUS</span><span>EARLY START → FINISH</span><span>FLOAT</span></div>{schedule.tasks.map((task) => <div className="duration-row schedule-row" key={task.id}><strong>{task.name}{task.critical && <i className="critical-marker"/>}</strong><span className={`task-status status-${task.status}`}>{prettyStatus(task.status)}</span><span className="schedule-date">{task.early_start} {task.early_start_at.slice(11,16)} <span>→</span> {task.early_finish} {task.early_finish_at.slice(11,16)}</span><span className={task.critical ? "critical-float" : ""}>{task.total_float_work_minutes ? `${formatWorkMinutes(task.total_float_work_minutes)}` : "Critical"}</span></div>)}</div><div className="dependency-list"><div><span className="section-eyebrow">TASK DEPENDENCIES</span><strong>{schedule.dependencies.length}</strong></div>{schedule.dependencies.length ? schedule.dependencies.map((dependency) => <div className="dependency-row" key={dependency.id}><span>{tasks.find((task) => task.id === dependency.predecessor_task_id)?.name ?? `Task ${dependency.predecessor_task_id}`}</span><i>{dependency.type}{dependency.lag_work_minutes ? ` · ${dependency.lag_work_minutes}m lag` : ""}</i><span>{tasks.find((task) => task.id === dependency.successor_task_id)?.name ?? `Task ${dependency.successor_task_id}`}</span><button onClick={async () => { try { await api(`/api/v1/projects/${projectId}/dependencies/${dependency.id}`, { method: "DELETE" }); const [scheduleResult, workloadResult, insightsResult] = await Promise.all([api<{ schedule: ProjectSchedule }>(`/api/v1/projects/${projectId}/schedule`), api<{ workload: Workload }>(`/api/v1/projects/${projectId}/workload`), api<{ insights: ProjectInsights }>(`/api/v1/projects/${projectId}/insights`)]); setSchedule(scheduleResult.schedule); setWorkload(workloadResult.workload); setInsights(insightsResult.insights); } catch (reason) { setError((reason as Error).message); } }}>Remove</button></div>) : <p>No dependencies connect these tasks yet.</p>}</div></> : <div className="page-empty"><span>No tasks have been added to this project yet.</span><button className="button button-outline" onClick={() => setModal("task")}><Icon name="plus" size={14}/> Add a task</button></div>}</section>;
 
+
+
   const workloadContent = <section className="page-section"><div className="section-page-heading"><div><span className="section-eyebrow">CAPACITY PLANNING</span><h2>Workload</h2><p>{selectedProject ? `Resource assignments for ${selectedProject.name}.` : "Choose a project to review assignments."}</p></div>{selectedProject && <div className="workload-actions"><button className="button button-outline" onClick={() => setModal("resource")}><Icon name="plus" size={14}/> Add resource</button><button className="button button-primary" disabled={!workload?.resources.length || !tasks.length} onClick={() => setModal("assignment")}><Icon name="plus" size={14}/> Assign work</button></div>}</div>{workload?.overloads.length ? <div className="capability-note overload-note"><Icon name="chart" size={17}/><span><strong>{workload.overloads.length} overloaded day{workload.overloads.length === 1 ? "" : "s"} found.</strong> Assigned units exceed resource capacity on those dates.</span></div> : null}{!selectedProject ? <div className="page-empty"><span>Select a project to manage its resources.</span><button className="button button-outline" onClick={() => setView("Projects")}>Browse projects</button></div> : !workload?.resources.length ? <div className="page-empty"><span className="empty-emblem"><Icon name="people" size={20}/></span><strong>No resources yet</strong><span>Add people or equipment, then assign them to project tasks.</span><button className="button button-outline" onClick={() => setModal("resource")}><Icon name="plus" size={14}/> Add a resource</button></div> : <div className="resource-grid">{workload.resources.map((resource) => <article className="resource-card" key={resource.id}><div className="resource-card-heading"><span className="resource-avatar">{initials(resource.name)}</span><div><strong>{resource.name}</strong><small>{resource.resource_type} · capacity {resource.capacity_units} {resource.capacity_units === 1 ? "unit" : "units"}</small></div><span className="resource-count">{resource.assignments.length} tasks</span></div>{resource.days.length ? <><div className="resource-load-heading"><span>DATE</span><span>ALLOCATED / CAPACITY</span></div>{resource.days.map((day) => <div className={`resource-day ${day.overloaded ? "is-overloaded" : ""}`} key={day.date}><span>{day.date}</span><span className="load-bar"><i style={{ width: `${Math.min(100, day.assigned_units / resource.capacity_units * 100)}%` }}/></span><strong>{day.assigned_units} / {day.capacity_units}</strong></div>)}</> : <p className="resource-empty">No task assignments yet.</p>}{resource.assignments.length > 0 && <div className="assignment-list">{resource.assignments.map((assignment) => <div className="assignment-item" key={assignment.id}><span>{assignment.task_name}</span><small>{assignment.units} units</small><button aria-label={`Remove ${resource.name} from ${assignment.task_name}`} onClick={async () => { try { await api(`/api/v1/projects/${projectId}/tasks/${assignment.task_id}/assignments/${assignment.id}`, { method: "DELETE" }); const result = await api<{ workload: Workload }>(`/api/v1/projects/${projectId}/workload`); setWorkload(result.workload); } catch (reason) { setError((reason as Error).message); } }}>Remove</button></div>)}</div>}</article>)}</div>}</section>;
+
+
 
   const insightsContent = <section className="page-section"><div className="section-page-heading"><div><span className="section-eyebrow">{selectedProject?.name ?? "PROJECT"}</span><h2>Project insights</h2><p>Summary calculated from current task records.</p></div></div>{!selectedProject ? <div className="page-empty"><span>Select a project to see its task insights.</span><button className="button button-outline" onClick={() => setView("Projects")}>Browse projects</button></div> : !insights ? <div className="page-empty">Preparing project insights…</div> : <><div className="insight-stat-grid"><article className="insight-stat"><span>Total tasks</span><strong>{insights.total_tasks}</strong></article><article className="insight-stat"><span>Average progress</span><strong>{insights.average_progress}<small>%</small></strong></article><article className="insight-stat"><span>Completed</span><strong>{insights.completed_tasks}<small> / {insights.total_tasks}</small></strong></article><article className="insight-stat"><span>Estimated effort</span><strong>{insights.estimated_work_minutes.toLocaleString()}<small> min</small></strong></article><article className="insight-stat"><span>Critical tasks</span><strong>{insights.critical_tasks.length}</strong></article><article className="insight-stat"><span>Forecast finish</span><strong className="insight-date">{insights.project_finish}</strong></article></div><div className="insight-status-card"><span className="section-eyebrow">TASK STATUS BREAKDOWN</span><h3>Where work stands</h3>{(["not_started", "in_progress", "blocked", "completed"] as const).map((status) => <div className="insight-status-row" key={status}><span>{prettyStatus(status)}</span><span className="insight-bar"><i className={`bar-${status}`} style={{ width: insights.total_tasks ? `${insights.status_counts[status] / insights.total_tasks * 100}%` : "0%" }}/></span><strong>{insights.status_counts[status]}</strong></div>)}</div><div className="capability-note insight-note"><Icon name="chart" size={17}/><span><strong>Based on saved task data.</strong> The finish date and critical tasks are calculated from the current weekday calendar. Monte Carlo deadline confidence is not implemented yet.</span></div></>}</section>;
 
-  const settingsContent = <section className="page-section"><div className="section-page-heading"><div><span className="section-eyebrow">ACCOUNT & ORGANIZATION</span><h2>Settings</h2><p>Your account and current workspace details.</p></div></div><div className="settings-grid"><article className="settings-card"><span className="settings-card-icon"><Icon name="people" size={17}/></span><div><span className="section-eyebrow">YOUR ACCOUNT</span><h3>Profile</h3></div><dl><div><dt>Name</dt><dd>{user?.display_name ?? "—"}</dd></div><div><dt>Email</dt><dd>{user?.email ?? "—"}</dd></div><div><dt>User ID</dt><dd>{user?.id ?? "—"}</dd></div></dl><button className="button button-outline settings-action" onClick={logout}><Icon name="logout" size={14}/> Sign out</button></article><article className="settings-card"><span className="settings-card-icon"><Icon name="layers" size={17}/></span><div><span className="section-eyebrow">CURRENT CONTEXT</span><h3>Organization & workspace</h3></div><dl><div><dt>Organization</dt><dd>{selectedOrganization?.name ?? "None selected"}</dd></div><div><dt>Your role</dt><dd>{selectedOrganization?.role ?? "—"}</dd></div><div><dt>Workspace</dt><dd>{selectedWorkspace?.name ?? "None selected"}</dd></div><div><dt>Project</dt><dd>{selectedProject?.name ?? "None selected"}</dd></div></dl><p className="settings-readonly">These details are managed by your workspace.</p></article>{selectedProject && <form className="settings-card project-dates-form" onSubmit={saveProjectDates}><span className="settings-card-icon"><Icon name="calendar" size={17}/></span><div><span className="section-eyebrow">SCHEDULING</span><h3>Project dates</h3></div><p>Set the project start and target finish used for schedule and float calculations.</p><label>Start date<input type="date" name="start_date" defaultValue={selectedProject.start_date ?? ""}/></label><label>Target finish<input type="date" name="target_finish" defaultValue={selectedProject.target_finish ?? ""}/></label><button className="button button-primary" type="submit" disabled={busy || !["owner", "admin"].includes(selectedOrganization?.role ?? "")}>{busy ? "Saving…" : "Save dates"}</button>{!(["owner", "admin"].includes(selectedOrganization?.role ?? "")) && <small className="settings-readonly">An organization owner or admin can change project dates.</small>}</form>}</div></section>;
 
-  const overviewContent = !selectedProject ? <section className="empty-state"><div className="empty-emblem"><Icon name="layers" size={22}/></div><span className="section-eyebrow">START WITH A PROJECT</span><h2>Your next good idea starts here</h2><p>Create a project to organize work and add tasks. Your information will be saved to your workspace.</p><button className="button button-primary" onClick={() => setModal("project")}><Icon name="plus" size={15}/> Create project</button></section> : <><section className="summary-grid"><article className="summary-card"><div className="summary-top"><span className="summary-label">OVERALL PROGRESS</span><span className="card-icon sage-icon"><Icon name="grid" size={16}/></span></div><div className="metric-row"><strong>{progress}<span>%</span></strong></div><div className="progress-track"><span style={{ width: `${progress}%` }}/></div><div className="card-foot"><span>Average progress across project tasks</span><span>{tasks.length} {tasks.length === 1 ? "task" : "tasks"}</span></div></article><article className="summary-card"><div className="summary-top"><span className="summary-label">COMPLETED TASKS</span><span className="card-icon lilac-icon"><Icon name="check" size={16}/></span></div><div className="metric-row"><strong>{completeCount}<span className="metric-slash"> / {tasks.length}</span></strong></div><div className="card-foot"><span>Tasks marked complete</span><span>{tasks.length ? `${Math.round(completeCount / tasks.length * 100)}%` : "—"}</span></div></article><article className="summary-card"><div className="summary-top"><span className="summary-label">PROJECT STATUS</span><span className="card-icon peach-icon"><Icon name="layers" size={16}/></span></div><div className="metric-row"><strong className="status-metric">{selectedProject.status.replaceAll("_", " ")}</strong></div><div className="card-foot"><span>Current project status</span><span className="deadline-status"><i/>{selectedProject.status === "active" ? "Active" : "Updated"}</span></div></article></section><section className="timeline-card task-card"><div className="timeline-heading"><div><div className="section-eyebrow">PROJECT WORK</div><h2>Tasks <span className="live-dot"/></h2><p>{tasks.length ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} in this project` : "Tasks saved to your project appear here."}</p></div><label className="search-box"><Icon name="search" size={15}/><input aria-label="Search tasks" placeholder="Find a task..." value={filter} onChange={(event) => setFilter(event.target.value)}/></label></div><div className="real-task-header"><span>TASK</span><span>STATUS</span><span>PROGRESS</span><span>DURATION</span></div>{pageLoading ? <div className="task-empty">Loading project tasks…</div> : filteredTasks.length ? <div className="real-task-list">{filteredTasks.map((task) => <article className="real-task-row" key={task.id}><span className="real-task-title"><span className={`task-check ${task.status === "completed" ? "checked" : ""}`}>{task.status === "completed" && <Icon name="check" size={11}/>}</span><span><strong>{task.name}</strong>{task.description && <small>{task.description}</small>}</span></span><span><span className={`task-status status-${task.status}`}>{prettyStatus(task.status)}</span></span><span className="real-progress"><span className="real-progress-track"><i style={{ width: `${task.progress}%` }}/></span><small>{task.progress}%</small></span><span className="task-duration">{task.duration_work_minutes ? `${formatWorkMinutes(task.duration_work_minutes)}` : "—"}</span></article>)}</div> : <div className="task-empty"><span className="empty-emblem small-emblem"><Icon name={filter ? "search" : "layers"} size={18}/></span><strong>{filter ? "No matching tasks" : "No tasks yet"}</strong><span>{filter ? "Try a different search." : "Add a task to give this project its first next step."}</span>{!filter && <button className="button button-outline" onClick={() => setModal("task")}><Icon name="plus" size={14}/> Add the first task</button>}</div>}<div className="timeline-footer"><span>Project data is stored in your workspace</span><span>{tasks.length} total</span></div></section></>;
+
+  const settingsContent = <section className="page-section"><div className="section-page-heading"><div><span className="section-eyebrow">ACCOUNT & ORGANIZATION</span><h2>Settings</h2><p>Your account and current workspace details.</p></div></div><div className="settings-grid"><article className="settings-card"><span className="settings-card-icon"><Icon name="people" size={17}/></span><div><span className="section-eyebrow">YOUR ACCOUNT</span><h3>Profile</h3></div><dl><div><dt>Name</dt><dd>{user?.display_name ?? "—"}</dd></div><div><dt>Email</dt><dd>{user?.email ?? "—"}</dd></div><div><dt>User ID</dt><dd>{user?.id ?? "—"}</dd></div></dl><button className="button button-outline settings-action" onClick={async()=>{try{const data=await api<Record<string,unknown>>("/api/v1/account/export");const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="projectpulse-account-export.json";a.click();URL.revokeObjectURL(a.href);}catch(e){setError((e as Error).message);}}}>Export account data</button><button className="button button-outline settings-action" onClick={async()=>{const password=window.prompt("Enter your password to permanently delete your account");if(!password||!window.confirm("Delete your account and sole-member organization data? Shared workspace data remains."))return;try{await api("/api/v1/account",{method:"DELETE",body:JSON.stringify({password})});await logout();}catch(e){setError((e as Error).message);}}}>Delete account</button><button className="button button-outline settings-action" onClick={logout}><Icon name="logout" size={14}/> Sign out</button></article><article className="settings-card"><span className="settings-card-icon"><Icon name="layers" size={17}/></span><div><span className="section-eyebrow">CURRENT CONTEXT</span><h3>Organization & workspace</h3></div><dl><div><dt>Organization</dt><dd>{selectedOrganization?.name ?? "None selected"}</dd></div><div><dt>Your role</dt><dd>{selectedOrganization?.role ?? "—"}</dd></div><div><dt>Workspace</dt><dd>{selectedWorkspace?.name ?? "None selected"}</dd></div><div><dt>Project</dt><dd>{selectedProject?.name ?? "None selected"}</dd></div></dl><p className="settings-readonly">These details are managed by your workspace.</p></article>{selectedProject && <form className="settings-card project-dates-form" onSubmit={saveProjectDates}><span className="settings-card-icon"><Icon name="calendar" size={17}/></span><div><span className="section-eyebrow">SCHEDULING</span><h3>Project dates</h3></div><p>Set the project start and target finish used for schedule and float calculations.</p><label>Start date<input type="date" name="start_date" defaultValue={selectedProject.start_date ?? ""}/></label><label>Target finish<input type="date" name="target_finish" defaultValue={selectedProject.target_finish ?? ""}/></label><button className="button button-primary" type="submit" disabled={busy || !["owner", "admin"].includes(selectedOrganization?.role ?? "")}>{busy ? "Saving…" : "Save dates"}</button>{!(["owner", "admin"].includes(selectedOrganization?.role ?? "")) && <small className="settings-readonly">An organization owner or admin can change project dates.</small>}</form>}{selectedProject && <article className="settings-card"><span className="settings-card-icon"><Icon name="calendar" size={17}/></span><div><span className="section-eyebrow">PROJECT CALENDAR</span><h3>Working days and holidays</h3></div><form onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api(`/api/v1/projects/${projectId}/calendar`,{method:"PUT",body:JSON.stringify({timezone:String(f.get("timezone")),working_days:String(f.get("working_days")).split(",").map(Number),holidays:String(f.get("holidays")).split(",").map(x=>x.trim()).filter(Boolean)})});setError("Project calendar saved.");}catch(err){setError((err as Error).message);}}}><label>Time zone<input name="timezone" defaultValue="UTC" placeholder="Asia/Kolkata"/></label><label>Working weekdays<input name="working_days" defaultValue="0,1,2,3,4"/><small>Comma-separated: 0 Monday through 6 Sunday</small></label><label>Holidays<input name="holidays" placeholder="2026-12-25, 2027-01-01"/><small>Comma-separated YYYY-MM-DD dates</small></label><button className="button button-primary" disabled={!['owner','admin'].includes(selectedOrganization?.role??'')}>Save calendar</button></form></article>}<article className="settings-card"><span className="settings-card-icon"><Icon name="people" size={17}/></span><div><span className="section-eyebrow">TEAM ACCESS</span><h3>Invite a member</h3></div><form onSubmit={async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api(`/api/v1/organizations/${organizationId}/invitations`,{method:"POST",body:JSON.stringify({email:String(f.get("invite_email")),role:String(f.get("invite_role"))})});setError("Invitation sent.");e.currentTarget.reset();}catch(err){setError((err as Error).message);}}}><label>Email<input type="email" name="invite_email" required placeholder="teammate@example.com"/></label><label>Role<select name="invite_role"><option value="member">Member — can work in projects</option><option value="admin">Admin — can manage members and settings</option></select></label><button className="button button-primary" disabled={!organizationId||!['owner','admin'].includes(selectedOrganization?.role??'')}>Send invitation</button><small>Owners and admins can invite; members can view and update project work.</small></form></article></div></section>;
+
+
+
+  const overviewContent = !selectedProject ? <section className="empty-state"><div className="empty-emblem"><Icon name="layers" size={22}/></div><span className="section-eyebrow">START WITH A PROJECT</span><h2>Your next good idea starts here</h2><p>Create a project to organize work and add tasks. Your information will be saved to your workspace.</p><button className="button button-primary" onClick={() => setModal("project")}><Icon name="plus" size={15}/> Create project</button></section> : <><section className="summary-grid"><article className="summary-card"><div className="summary-top"><span className="summary-label">OVERALL PROGRESS</span><span className="card-icon sage-icon"><Icon name="grid" size={16}/></span></div><div className="metric-row"><strong>{progress}<span>%</span></strong></div><div className="progress-track"><span style={{ width: `${progress}%` }}/></div><div className="card-foot"><span>Average progress across project tasks</span><span>{tasks.length} {tasks.length === 1 ? "task" : "tasks"}</span></div></article><article className="summary-card"><div className="summary-top"><span className="summary-label">COMPLETED TASKS</span><span className="card-icon lilac-icon"><Icon name="check" size={16}/></span></div><div className="metric-row"><strong>{completeCount}<span className="metric-slash"> / {tasks.length}</span></strong></div><div className="card-foot"><span>Tasks marked complete</span><span>{tasks.length ? `${Math.round(completeCount / tasks.length * 100)}%` : "—"}</span></div></article><article className="summary-card"><div className="summary-top"><span className="summary-label">PROJECT STATUS</span><span className="card-icon peach-icon"><Icon name="layers" size={16}/></span></div><div className="metric-row"><strong className="status-metric">{selectedProject.status.replaceAll("_", " ")}</strong></div><div className="card-foot"><span>Current project status</span><span className="deadline-status"><i/>{selectedProject.status === "active" ? "Active" : "Updated"}</span></div></article></section><section className="timeline-card task-card"><div className="timeline-heading"><div><div className="section-eyebrow">PROJECT WORK</div><h2>Tasks <span className="live-dot"/></h2><p>{tasks.length ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} in this project` : "Tasks saved to your project appear here."}</p></div><label className="search-box"><Icon name="search" size={15}/><input aria-label="Search tasks" placeholder="Find a task..." value={filter} onChange={(event) => setFilter(event.target.value)}/></label></div><div className="real-task-header"><span>TASK</span><span>STATUS</span><span>PROGRESS</span><span>DURATION</span></div>{pageLoading ? <div className="task-empty">Loading project tasks…</div> : filteredTasks.length ? <div className="real-task-list">{filteredTasks.map((task) => <article className="real-task-row" key={task.id}><span className="real-task-title"><span className={`task-check ${task.status === "completed" ? "checked" : ""}`}>{task.status === "completed" && <Icon name="check" size={11}/>}</span><span><strong>{task.name}</strong>{task.description && <small>{task.description}</small>}</span><button type="button" className="task-edit-button" onClick={() => { setEditingTask(task); setModal("task"); }}>Edit</button></span><span><span className={`task-status status-${task.status}`}>{prettyStatus(task.status)}</span></span><span className="real-progress"><span className="real-progress-track"><i style={{ width: `${task.progress}%` }}/></span><small>{task.progress}%</small></span><span className="task-duration">{task.duration_work_minutes ? `${formatWorkMinutes(task.duration_work_minutes)}` : "—"}</span></article>)}</div> : <div className="task-empty"><span className="empty-emblem small-emblem"><Icon name={filter ? "search" : "layers"} size={18}/></span><strong>{filter ? "No matching tasks" : "No tasks yet"}</strong><span>{filter ? "Try a different search." : "Add a task to give this project its first next step."}</span>{!filter && <button className="button button-outline" onClick={() => setModal("task")}><Icon name="plus" size={14}/> Add the first task</button>}</div>}<div className="timeline-footer"><span>Project data is stored in your workspace</span><span>{tasks.length} total</span></div></section></>;
+
+
 
   if (!authChecked) return <main className="loading-screen"><span className="brand-mark"><i/><i/><i/><i/></span><span>Connecting to your workspace</span></main>;
-  const authDialog = <div className="modal-backdrop auth-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setAuthOpen(false); }}><div className="auth-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={() => setAuthOpen(false)}><Icon name="close"/></button><span className="section-eyebrow">{authMode === "login" ? "WELCOME BACK" : "A GOOD PLACE TO BEGIN"}</span><h2>{authMode === "login" ? "Sign in to your workspace" : "Create your account"}</h2><p>{authMode === "login" ? "Pick up where your team left off." : "Start bringing your projects into focus."}</p><form className="auth-form" onSubmit={authenticate}>{authMode === "register" && <label>Your name<input name="display_name" autoComplete="name" required maxLength={120} placeholder="Your full name"/></label>}<label>Email address<input type="email" name="email" autoComplete="email" required placeholder="you@example.com"/></label><label>Password<input type="password" name="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={8} required placeholder="At least 8 characters"/></label>{authError && <div className="error-message">{authError}</div>}<button className="button button-primary auth-submit" disabled={busy}>{busy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}<Icon name="arrow" size={15}/></button></form><div className="auth-switch">{authMode === "login" ? "New to ProjectPulse?" : "Already have an account?"}<button type="button" onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); }}>{authMode === "login" ? "Create an account" : "Sign in"}</button></div><small>Your session workspace will be copied into your account after sign in.</small></div></div>;
-  if (!user && mode === "welcome") return <main className="welcome-screen"><header className="welcome-header"><a className="brand" href="#home"><span className="brand-mark"><i/><i/><i/><i/></span><span>pulse<span className="brand-period">.</span></span></a><button className="button button-outline" onClick={() => { setAuthOpen(true); setAuthMode("login"); }}>Sign in</button></header><section className="welcome-hero"><span className="section-eyebrow">A CLEARER WAY TO WORK</span><h1>Make space for<br/><em>meaningful work.</em></h1><p>Plan projects, shape priorities, and keep the next step in view. Begin with a private session workspace; sign in when you’re ready to save it.</p><div className="welcome-actions"><button className="button button-primary" onClick={enterGuest}>Explore ProjectPulse <Icon name="arrow" size={15}/></button><button className="welcome-link" onClick={() => { setAuthOpen(true); setAuthMode("register"); }}>Create an account</button></div><small>No account needed to explore. Session work is cleared when your browser session ends.</small></section><footer className="welcome-footer"><span>ProjectPulse <span className="footer-spark">✳</span></span><span><button onClick={() => setPolicyPage("privacy")}>Privacy</button><button onClick={() => setPolicyPage("cookies")}>Cookies</button></span></footer>{authOpen && authDialog}{policyPage && <PolicyDialog page={policyPage} onClose={() => setPolicyPage(null)}/>}</main>;
+
+  const authDialog = <div className="modal-backdrop auth-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setAuthOpen(false); }}><div className="auth-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={() => setAuthOpen(false)}><Icon name="close"/></button><span className="section-eyebrow">{authMode === "login" ? "WELCOME BACK" : "A GOOD PLACE TO BEGIN"}</span><h2>{authMode === "login" ? "Sign in to your workspace" : "Create your account"}</h2><p>{authMode === "login" ? "Pick up where your team left off." : "Start bringing your projects into focus."}</p><form className="auth-form" onSubmit={authenticate}>{authMode === "register" && <label>Your name<input name="display_name" autoComplete="name" required maxLength={120} placeholder="Your full name"/></label>}<label>Email address<input type="email" name="email" autoComplete="email" required placeholder="you@example.com"/></label><label>Password<input type="password" name="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={10} required placeholder="At least 10 characters"/></label>{authError && <div className="error-message">{authError}</div>}<button className="button button-primary auth-submit" disabled={busy}>{busy ? "Please wait…" : authMode === "login" ? "Sign in" : "Create account"}<Icon name="arrow" size={15}/></button></form>{authMode === "login" && <div className="auth-switch"><button type="button" onClick={async () => { const email=window.prompt("Enter your account email to receive a password reset link"); if(email) try { await api("/api/v1/auth/request-password-reset",{method:"POST",body:JSON.stringify({email})}); setAuthError("If an account exists, a reset link has been sent."); } catch(e) { setAuthError((e as Error).message); } }}>Forgot password?</button><button type="button" onClick={async () => { const email=window.prompt("Enter your account email to resend verification"); if(email) try { await api("/api/v1/auth/resend-verification",{method:"POST",body:JSON.stringify({email})}); setAuthError("If the account needs verification, a link has been sent."); } catch(e) { setAuthError((e as Error).message); } }}>Resend verification</button></div>}<div className="auth-switch">{authMode === "login" ? "New to ProjectPulse?" : "Already have an account?"}<button type="button" onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); }}>{authMode === "login" ? "Create an account" : "Sign in"}</button></div><small>Your session workspace will be copied into your account after sign in.</small></div></div>;
+
+  if (!user && mode === "welcome") return <main className="welcome-screen"><header className="welcome-header"><a className="brand" href="#home"><span className="brand-mark"><i/><i/><i/><i/></span><span>pulse<span className="brand-period">.</span></span></a><button className="button button-outline" onClick={() => { setAuthOpen(true); setAuthMode("login"); }}>Sign in</button></header><section className="welcome-hero"><span className="section-eyebrow">A CLEARER WAY TO WORK</span><h1>Make space for<br/><em>meaningful work.</em></h1><p>Plan projects, shape priorities, and keep the next step in view. Begin with a private session workspace; sign in when you’re ready to save it.</p><div className="welcome-actions"><button className="button button-primary" onClick={enterGuest}>Explore ProjectPulse <Icon name="arrow" size={15}/></button><button className="welcome-link" onClick={() => { setAuthOpen(true); setAuthMode("register"); }}>Create an account</button></div><small>No account needed to explore. Session work is cleared when your browser session ends.</small></section><footer className="welcome-footer"><span>ProjectPulse <span className="footer-spark">âœ³</span></span><span><button onClick={() => setPolicyPage("privacy")}>Privacy</button><button onClick={() => setPolicyPage("cookies")}>Cookies</button><button onClick={() => setPolicyPage("terms")}>Terms</button></span></footer>{authOpen && authDialog}{policyPage && <PolicyDialog page={policyPage} onClose={() => setPolicyPage(null)}/>}</main>;
+
   if (!user && mode === "guest" && !guestReady) return <main className="loading-screen"><span className="brand-mark"><i/><i/><i/><i/></span><span>Preparing your session workspace</span></main>;
 
+
+
   return <div className="app-shell"><aside className="sidebar"><a className="brand" href="#home" aria-label="ProjectPulse home"><span className="brand-mark"><i/><i/><i/><i/></span><span>pulse<span className="brand-period">.</span></span></a>
-    <div className="sidebar-label">ORGANIZATION</div><button className="workspace-switch" onClick={() => organizations.length ? setOrganizationId(organizations[(organizations.findIndex((item) => item.id === organizationId) + 1) % organizations.length].id) : setModal("organization")}><span className="workspace-avatar">{selectedOrganization ? initials(selectedOrganization.name).slice(0,1) : "＋"}</span><span className="workspace-copy"><strong>{selectedOrganization?.name ?? "Create organization"}</strong><small>{selectedOrganization?.role ?? "Get started"}</small></span><Icon name="chevron" size={15}/></button>
+
+    <div className="sidebar-label">ORGANIZATION</div><button className="workspace-switch" onClick={() => organizations.length ? setOrganizationId(organizations[(organizations.findIndex((item) => item.id === organizationId) + 1) % organizations.length].id) : setModal("organization")}><span className="workspace-avatar">{selectedOrganization ? initials(selectedOrganization.name).slice(0,1) : "ï¼‹"}</span><span className="workspace-copy"><strong>{selectedOrganization?.name ?? "Create organization"}</strong><small>{selectedOrganization?.role ?? "Get started"}</small></span><Icon name="chevron" size={15}/></button>
+
     <div className="sidebar-label side-section-label">WORKSPACE</div>{selectedOrganization ? <><select className="sidebar-select" value={workspaceId} onChange={(event) => setWorkspaceId(Number(event.target.value) || "")} aria-label="Select workspace"><option value="">Select a workspace</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select>{workspaces.length === 0 && <button className="side-create" onClick={() => setModal("workspace")}><Icon name="plus" size={14}/> Create workspace</button>}</> : <p className="side-hint">Create an organization to begin.</p>}
+
     <div className="projects-heading"><span className="sidebar-label">PROJECTS</span>{workspaceId && <button className="icon-button tiny" aria-label="Create project" onClick={() => setModal("project")}><Icon name="plus" size={15}/></button>}</div><nav className="project-nav">{projects.map((project) => <button key={project.id} className={`project-link ${projectId === project.id ? "active-project" : ""}`} onClick={() => setProjectId(project.id)}><span className={`project-dot ${project.status === "completed" ? "dot-complete" : "dot-live"}`}/><span>{project.name}</span></button>)}{workspaceId && projects.length === 0 && <button className="side-create" onClick={() => setModal("project")}><Icon name="plus" size={14}/> Create project</button>}</nav>
+
     <nav className="primary-navigation" aria-label="Workspace pages">{primaryViews.map((item) => <button key={item.label} className={`nav-item ${view === item.label ? "selected" : ""}`} onClick={() => openView(item.label)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
+
     <div className="sidebar-spacer"/><button className={`nav-item settings-link ${view === "Settings" ? "selected" : ""}`} onClick={() => openView("Settings")}><Icon name="settings"/><span>Settings</span></button><div className="profile"><span className="profile-avatar">{initials(user?.display_name ?? "Guest")}</span><span className="workspace-copy"><strong>{user?.display_name ?? "Guest session"}</strong><small>{user?.email ?? "Temporary workspace"}</small></span>{user ? <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={logout}><Icon name="logout" size={16}/></button> : <button className="profile-save" onClick={() => { setAuthOpen(true); setAuthMode("login"); }}>Save</button>}</div></aside>
-    <main className="main-content"><header className="topbar"><div className="breadcrumbs"><span>{selectedOrganization?.name ?? "Organization"}</span><Icon name="chevron" size={13}/><span>{selectedWorkspace?.name ?? "Workspace"}</span><Icon name="chevron" size={13}/><strong>{selectedProject?.name ?? "Projects"}</strong></div><div className="top-actions"><span className="connection"><i/>{user ? "Saved account" : "Session only"}</span><button className="icon-button notification-button" aria-label="Workspace information" onClick={() => setNotice(!notice)}><Icon name="bell"/></button><span className="top-divider"/><span className="top-avatar">{initials(user?.display_name ?? "Guest")}</span></div>{notice && <div className="notification-popover"><strong>{user ? "Saved workspace" : "Temporary workspace"}</strong><p>{user ? "Your project data is saved to your account." : "This session’s work is stored in this browser session. Sign in to keep it."}</p></div>}</header>
-    <div className="page-wrap"><div className="page-heading"><div><div className="heading-kicker"><span className="project-dot dot-live"/>{selectedWorkspace?.name ?? "YOUR WORKSPACE"}<span className="heading-separator">/</span>{view.toUpperCase()}</div><h1>{view === "Overview" ? selectedProject?.name ?? (selectedOrganization ? `Welcome, ${user?.display_name.split(" ")[0] ?? "there"}` : "Your workspace awaits") : view}<span className="heading-spark">✳</span></h1><p className="heading-subtitle">{{ Overview: "A clear view of the work in progress.", Projects: "Your projects, all in one place.", Timeline: "Understand the effort behind each task.", Workload: "A considered view of team capacity.", Insights: "A clearer picture, grounded in project data.", Settings: "Your account and workspace details." }[view]}</p></div>{view === "Overview" && selectedProject && <button className="button button-primary" onClick={() => setModal("task")}><Icon name="plus" size={16}/> New task</button>}</div>
+
+    <main className="main-content"><header className="topbar"><div className="breadcrumbs"><span>{selectedOrganization?.name ?? "Organization"}</span><Icon name="chevron" size={13}/><span>{selectedWorkspace?.name ?? "Workspace"}</span><Icon name="chevron" size={13}/><strong>{selectedProject?.name ?? "Projects"}</strong></div><div className="top-actions"><span className="connection"><i/>{user ? "Saved account" : "Session only"}</span><button className="icon-button notification-button" aria-label="Notifications" onClick={async()=>{setNotice(!notice);if(user)try{const r=await api<{notifications:typeof notifications}>('/api/v1/notifications');setNotifications(r.notifications);}catch(e){setError((e as Error).message);}}}><Icon name="bell"/></button><span className="top-divider"/><span className="top-avatar">{initials(user?.display_name ?? "Guest")}</span></div>{notice && <div className="notification-popover"><strong>{user ? "Notifications" : "Temporary workspace"}</strong>{user ? notifications.length ? notifications.map(n=><button key={n.id} className="notification-item" onClick={async()=>{await api(`/api/v1/notifications/${n.id}`,{method:"PATCH",body:JSON.stringify({})});setNotifications(items=>items.map(x=>x.id===n.id?{...x,read_at:new Date().toISOString()}:x));}}>{n.read_at ? "✓ " : "• "}{n.message}</button>) : <p>No notifications yet.</p> : <p>This session’s work is stored in this browser session. Sign in to keep it.</p>}</div>}</header>
+
+    <div className="page-wrap"><div className="page-heading"><div><div className="heading-kicker"><span className="project-dot dot-live"/>{selectedWorkspace?.name ?? "YOUR WORKSPACE"}<span className="heading-separator">/</span>{view.toUpperCase()}</div><h1>{view === "Overview" ? selectedProject?.name ?? (selectedOrganization ? `Welcome, ${user?.display_name.split(" ")[0] ?? "there"}` : "Your workspace awaits") : view}<span className="heading-spark">âœ³</span></h1><p className="heading-subtitle">{{ Overview: "A clear view of the work in progress.", Projects: "Your projects, all in one place.", Timeline: "Understand the effort behind each task.", Workload: "A considered view of team capacity.", Insights: "A clearer picture, grounded in project data.", Settings: "Your account and workspace details." }[view]}</p></div>{view === "Overview" && selectedProject && <button className="button button-primary" onClick={() => setModal("task")}><Icon name="plus" size={16}/> New task</button>}</div>
+
     {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss"><Icon name="close" size={15}/></button></div>}
+
     {!selectedOrganization ? <section className="empty-state"><div className="empty-emblem"><Icon name="layers" size={22}/></div><span className="section-eyebrow">YOUR SPACE, YOUR WAY</span><h2>Create your organization</h2><p>Organizations keep your work and projects together. Create one to start building your workspace.</p><button className="button button-primary" onClick={() => setModal("organization")}><Icon name="plus" size={15}/> Create organization</button></section>
+
     : !selectedWorkspace ? <section className="empty-state"><div className="empty-emblem"><Icon name="layers" size={22}/></div><span className="section-eyebrow">A PLACE FOR YOUR PROJECTS</span><h2>Create a workspace</h2><p>Workspaces give your organization a home for its projects.</p><button className="button button-primary" onClick={() => setModal("workspace")}><Icon name="plus" size={15}/> Create workspace</button></section>
+
     : view === "Projects" ? projectListContent
+
     : view === "Timeline" ? timelineContent
+
     : view === "Workload" ? workloadContent
+
     : view === "Insights" ? insightsContent
+
     : view === "Settings" ? settingsContent
+
     : !selectedProject ? <section className="empty-state"><div className="empty-emblem"><Icon name="layers" size={22}/></div><span className="section-eyebrow">START WITH A PROJECT</span><h2>Your next good idea starts here</h2><p>Create a project to organize work and add tasks. Your information will be saved to your workspace.</p><button className="button button-primary" onClick={() => setModal("project")}><Icon name="plus" size={15}/> Create project</button></section>
+
     : <><section className="summary-grid"><article className="summary-card"><div className="summary-top"><span className="summary-label">OVERALL PROGRESS</span><span className="card-icon sage-icon"><Icon name="grid" size={16}/></span></div><div className="metric-row"><strong>{progress}<span>%</span></strong></div><div className="progress-track"><span style={{ width: `${progress}%` }}/></div><div className="card-foot"><span>Average progress across project tasks</span><span>{tasks.length} {tasks.length === 1 ? "task" : "tasks"}</span></div></article><article className="summary-card"><div className="summary-top"><span className="summary-label">COMPLETED TASKS</span><span className="card-icon lilac-icon"><Icon name="check" size={16}/></span></div><div className="metric-row"><strong>{completeCount}<span className="metric-slash"> / {tasks.length}</span></strong></div><div className="card-foot"><span>Tasks marked complete</span><span>{tasks.length ? `${Math.round(completeCount / tasks.length * 100)}%` : "—"}</span></div></article><article className="summary-card"><div className="summary-top"><span className="summary-label">PROJECT STATUS</span><span className="card-icon peach-icon"><Icon name="layers" size={16}/></span></div><div className="metric-row"><strong className="status-metric">{selectedProject.status.replaceAll("_", " ")}</strong></div><div className="card-foot"><span>Current project status</span><span className="deadline-status"><i/>{selectedProject.status === "active" ? "Active" : "Updated"}</span></div></article></section>
+
     <section className="timeline-card task-card"><div className="timeline-heading"><div><div className="section-eyebrow">PROJECT WORK</div><h2>Tasks <span className="live-dot"/></h2><p>{tasks.length ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} in this project` : "Tasks saved to your project appear here."}</p></div><label className="search-box"><Icon name="search" size={15}/><input aria-label="Search tasks" placeholder="Find a task..." value={filter} onChange={(event) => setFilter(event.target.value)}/></label></div>
+
     <div className="real-task-header"><span>TASK</span><span>STATUS</span><span>PROGRESS</span><span>DURATION</span></div>{pageLoading ? <div className="task-empty">Loading project tasks…</div> : filteredTasks.length ? <div className="real-task-list">{filteredTasks.map((task) => <article className="real-task-row" key={task.id}><span className="real-task-title"><span className={`task-check ${task.status === "completed" ? "checked" : ""}`}>{task.status === "completed" && <Icon name="check" size={11}/>}</span><span><strong>{task.name}</strong>{task.description && <small>{task.description}</small>}</span></span><span><select className={`task-status-control status-${task.status}`} disabled={!user} aria-label={`Status for ${task.name}`} value={task.status} onChange={async (event) => { const status = event.target.value as Task["status"]; try { const result = await api<{ task: Task }>(`/api/v1/projects/${projectId}/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ status, ...(status === "completed" ? { progress: 100 } : {}) }) }); setTasks((items) => items.map((item) => item.id === task.id ? result.task : item)); } catch (reason) { setError((reason as Error).message); } }}><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="blocked">Blocked</option><option value="completed">Complete</option></select></span><span className="real-progress"><span className="real-progress-track"><i style={{ width: `${task.progress}%` }}/></span><small>{task.progress}%</small></span><span className="task-duration">{task.duration_work_minutes ? `${formatWorkMinutes(task.duration_work_minutes)}` : "—"}</span></article>)}</div> : <div className="task-empty"><span className="empty-emblem small-emblem"><Icon name={filter ? "search" : "layers"} size={18}/></span><strong>{filter ? "No matching tasks" : "No tasks yet"}</strong><span>{filter ? "Try a different search." : "Add a task to give this project its first next step."}</span>{!filter && <button className="button button-outline" onClick={() => setModal("task")}><Icon name="plus" size={14}/> Add the first task</button>}</div>}
+
     <div className="timeline-footer"><span>Project data is stored in your workspace</span><span>{tasks.length} total</span></div></section></>}
-    <footer className="page-footer"><span>ProjectPulse <span className="footer-spark">✳</span></span><span className="health-note"><i className="health-ok"/>{user ? "Saved to your account" : "Temporary session data"}</span><span className="policy-links"><button onClick={() => setPolicyPage("privacy")}>Privacy</button><button onClick={() => setPolicyPage("cookies")}>Cookies</button></span></footer></div></main>
-    {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setModal(null); }}><form className="task-modal" onSubmit={saveModal}><button type="button" className="modal-close icon-button" aria-label="Close" onClick={() => setModal(null)}><Icon name="close"/></button><div className="section-eyebrow">{modal === "task" || modal === "assignment" || modal === "dependency" ? "PROJECT WORK" : modal === "resource" ? "CAPACITY PLANNING" : "YOUR WORKSPACE"}</div><h2>{({ organization: "Create an organization", workspace: "Create a workspace", project: "Create a project", task: "Add a task", resource: "Add a resource", assignment: "Assign a resource", dependency: "Connect two tasks" })[modal]}</h2><p>{modal === "task" ? "Add a real task to this project. It will be saved to your workspace." : modal === "resource" ? "Add a person or resource with its available capacity." : modal === "assignment" ? "Choose a task and allocate part of a resource’s capacity." : modal === "dependency" ? "Set the order in which these tasks depend on one another." : user ? "This will be saved to your ProjectPulse account." : "This stays in this browser session until you sign in."}</p>{modal !== "assignment" && modal !== "dependency" && <><label className="field-label" htmlFor="item-name">{modal === "task" ? "Task name" : modal === "resource" ? "Resource name" : `${modal[0].toUpperCase()}${modal.slice(1)} name`}</label><input autoFocus id="item-name" name="name" className="task-input" placeholder={modal === "task" ? "What needs to get done?" : modal === "resource" ? "Name" : `Name your ${modal}`} required maxLength={120}/></>}{modal === "task" && <><label className="field-label field-extra" htmlFor="item-description">Description <span>OPTIONAL</span></label><textarea id="item-description" name="description" className="task-input task-textarea" placeholder="Add a little more context…"/><label className="field-label field-extra" htmlFor="item-duration">Estimated duration <span>WORKING MINUTES</span></label><input id="item-duration" name="duration" type="number" min="0" step="15" defaultValue="0" className="task-input"/></>}{modal === "resource" && <><label className="field-label field-extra" htmlFor="resource-type">Resource type</label><select id="resource-type" className="task-input" name="resource_type"><option value="person">Person</option><option value="equipment">Equipment</option><option value="other">Other</option></select><label className="field-label field-extra" htmlFor="resource-capacity">Capacity in units</label><input id="resource-capacity" className="task-input" name="capacity_units" type="number" min="0.1" step="0.1" defaultValue="1" required/></>}{modal === "assignment" && <><label className="field-label" htmlFor="assignment-task">Task</label><select id="assignment-task" className="task-input" name="task_id" required>{tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><label className="field-label field-extra" htmlFor="assignment-resource">Resource</label><select id="assignment-resource" className="task-input" name="resource_id" required>{workload?.resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name} · {resource.capacity_units} units</option>)}</select><label className="field-label field-extra" htmlFor="assignment-units">Allocated units</label><input id="assignment-units" className="task-input" name="units" type="number" min="0.1" step="0.1" defaultValue="1" required/></>}{modal === "dependency" && <><label className="field-label" htmlFor="predecessor-task">Predecessor</label><select id="predecessor-task" className="task-input" name="predecessor_task_id" required>{tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><label className="field-label field-extra" htmlFor="successor-task">Successor</label><select id="successor-task" className="task-input" name="successor_task_id" required>{tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><label className="field-label field-extra" htmlFor="dependency-type">Relationship</label><select id="dependency-type" className="task-input" name="dependency_type"><option value="FS">Finish to start</option><option value="SS">Start to start</option><option value="FF">Finish to finish</option><option value="SF">Start to finish</option></select><label className="field-label field-extra" htmlFor="dependency-lag">Lag <span>WORKING MINUTES</span></label><input id="dependency-lag" className="task-input" name="lag_work_minutes" type="number" step="15" defaultValue="0"/></>}<div className="modal-buttons"><button className="button button-outline" type="button" disabled={busy} onClick={() => setModal(null)}>Cancel</button><button className="button button-primary" type="submit" disabled={busy}><Icon name="plus" size={15}/>{busy ? "Saving…" : "Save"}</button></div></form></div>}
+
+    <footer className="page-footer"><span>ProjectPulse <span className="footer-spark">âœ³</span></span><span className="health-note"><i className="health-ok"/>{user ? "Saved to your account" : "Temporary session data"}</span><span className="policy-links"><button onClick={() => setPolicyPage("privacy")}>Privacy</button><button onClick={() => setPolicyPage("cookies")}>Cookies</button><button onClick={() => setPolicyPage("terms")}>Terms</button></span></footer></div></main>
+
+    {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) { setModal(null); setEditingTask(null); } }}><form className="task-modal" onSubmit={saveModal}><button type="button" className="modal-close icon-button" aria-label="Close" onClick={() => { setModal(null); setEditingTask(null); }}><Icon name="close"/></button><div className="section-eyebrow">{modal === "task" || modal === "assignment" || modal === "dependency" ? "PROJECT WORK" : modal === "resource" ? "CAPACITY PLANNING" : "YOUR WORKSPACE"}</div><h2>{editingTask ? "Edit task" : ({ organization: "Create an organization", workspace: "Create a workspace", project: "Create a project", task: "Add a task", resource: "Add a resource", assignment: "Assign a resource", dependency: "Connect two tasks" })[modal]}</h2><p>{modal === "task" ? "Add a real task to this project. It will be saved to your workspace." : modal === "resource" ? "Add a person or resource with its available capacity." : modal === "assignment" ? "Choose a task and allocate part of a resource’s capacity." : modal === "dependency" ? "Set the order in which these tasks depend on one another." : user ? "This will be saved to your ProjectPulse account." : "This stays in this browser session until you sign in."}</p>{modal !== "assignment" && modal !== "dependency" && <><label className="field-label" htmlFor="item-name">{modal === "task" ? "Task name" : modal === "resource" ? "Resource name" : `${modal[0].toUpperCase()}${modal.slice(1)} name`}</label><input autoFocus id="item-name" name="name" className="task-input" defaultValue={editingTask?.name ?? ""} placeholder={modal === "task" ? "What needs to get done?" : modal === "resource" ? "Name" : `Name your ${modal}`} required maxLength={120}/></>}{modal === "task" && <><label className="field-label field-extra" htmlFor="item-description">Description <span>OPTIONAL</span></label><textarea id="item-description" name="description" className="task-input task-textarea" defaultValue={editingTask?.description ?? ""} placeholder="Add a little more context…"/><label className="field-label field-extra" htmlFor="item-duration">Estimated duration <span>WORKING MINUTES</span></label><input id="item-duration" name="duration" type="number" min="0" step="15" defaultValue={editingTask?.duration_work_minutes ?? 0} className="task-input"/></>}{modal === "resource" && <><label className="field-label field-extra" htmlFor="resource-type">Resource type</label><select id="resource-type" className="task-input" name="resource_type"><option value="person">Person</option><option value="equipment">Equipment</option><option value="other">Other</option></select><label className="field-label field-extra" htmlFor="resource-capacity">Capacity in units</label><input id="resource-capacity" className="task-input" name="capacity_units" type="number" min="0.1" step="0.1" defaultValue="1" required/></>}{modal === "assignment" && <><label className="field-label" htmlFor="assignment-task">Task</label><select id="assignment-task" className="task-input" name="task_id" required>{tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><label className="field-label field-extra" htmlFor="assignment-resource">Resource</label><select id="assignment-resource" className="task-input" name="resource_id" required>{workload?.resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name} · {resource.capacity_units} units</option>)}</select><label className="field-label field-extra" htmlFor="assignment-units">Allocated units</label><input id="assignment-units" className="task-input" name="units" type="number" min="0.1" step="0.1" defaultValue="1" required/></>}{modal === "dependency" && <><label className="field-label" htmlFor="predecessor-task">Predecessor</label><select id="predecessor-task" className="task-input" name="predecessor_task_id" required>{tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><label className="field-label field-extra" htmlFor="successor-task">Successor</label><select id="successor-task" className="task-input" name="successor_task_id" required>{tasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><label className="field-label field-extra" htmlFor="dependency-type">Relationship</label><select id="dependency-type" className="task-input" name="dependency_type"><option value="FS">Finish to start</option><option value="SS">Start to start</option><option value="FF">Finish to finish</option><option value="SF">Start to finish</option></select><label className="field-label field-extra" htmlFor="dependency-lag">Lag <span>WORKING MINUTES</span></label><input id="dependency-lag" className="task-input" name="lag_work_minutes" type="number" step="15" defaultValue="0"/></>}<div className="modal-buttons"><button className="button button-outline" type="button" disabled={busy} onClick={() => { setModal(null); setEditingTask(null); }}>Cancel</button><button className="button button-primary" type="submit" disabled={busy}><Icon name="plus" size={15}/>{busy ? "Saving…" : editingTask ? "Update task" : "Save"}</button></div></form></div>}
+
     {!user && authOpen && authDialog}
+
     {policyPage && <PolicyDialog page={policyPage} onClose={() => setPolicyPage(null)}/>}
+
     {!user && mode === "guest" && cookieNotice && <div className="cookie-notice"><div><strong>Essential cookies only</strong><p>We use the sign-in session cookie only after you log in. Guest work stays in this tab’s session storage. No advertising or analytics cookies are used.</p><button className="policy-inline" onClick={() => setPolicyPage("cookies")}>Cookie details</button></div><button className="button button-primary" onClick={() => { sessionStorage.setItem("projectpulse-cookie-notice", "seen"); setCookieNotice(false); }}>Got it</button></div>}
+
   </div>;
+
 }
 
+
+
 function PolicyDialog({ page, onClose }: { page: Exclude<PolicyPage, null>; onClose: () => void }) {
-  const privacy = page === "privacy";
-  return <div className="modal-backdrop policy-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="policy-dialog" role="dialog" aria-modal="true" aria-labelledby="policy-title"><button className="modal-close icon-button" aria-label="Close" onClick={onClose}><Icon name="close"/></button><span className="section-eyebrow">PROJECTPULSE · {privacy ? "YOUR INFORMATION" : "BROWSER STORAGE"}</span><h2 id="policy-title">{privacy ? "Privacy notice" : "Cookie notice"}</h2><p className="policy-updated">Effective October 26, 2026</p>{privacy ? <><h3>What this app stores</h3><p>When you create an account, ProjectPulse stores your name and email, plus the organizations, workspaces, projects, tasks, and planning details you add. This data is kept by the service’s application database and associated with your account.</p><h3>Guest sessions</h3><p>Without signing in, workspace data is held in this browser tab’s session storage. It is not sent to the application database. It is removed when the browser session ends; closing a tab may or may not end the session depending on your browser’s session restore behavior. Choose “Save” or sign in to transfer it to your account.</p><h3>How it is used</h3><p>Account data is used to provide project planning, schedules, workload views, and account access. This build does not include third-party advertising or analytics. We do not sell personal information.</p><h3>Retention and requests</h3><p>Account data remains until it is deleted through an available account control or by the service operator. This build does not yet provide self-service export or deletion. For a production launch, the operator must publish a real contact address, retention period, deletion process, and hosting details.</p></> : <><h3>Cookies</h3><p>ProjectPulse does not use advertising or analytics cookies. After sign-in, the server uses its session cookie to recognize your account. It is an essential cookie used for authentication and is configured as HttpOnly and SameSite=Lax in the application.</p><h3>Guest browser storage</h3><p>Guest workspace content and this notice’s dismissal are kept in sessionStorage, not cookies. That data stays in the current browser session and is cleared when that session ends. The cookie notice can be opened again from the page footer.</p><h3>Production configuration</h3><p>Before public launch, the operator should enforce HTTPS, enable Secure cookies, configure an appropriate retention period, and replace development secrets. No optional tracking cookies are active in this build.</p></>}<button className="button button-primary policy-close" onClick={onClose}>Close</button></section></div>;
+
+  const [legal,setLegal]=useState<{operator:string;support_email:string;hosting_location:string;retention_period:string;deletion_process:string}|null>(null);
+
+  useEffect(()=>{api<typeof legal>("/api/v1/legal").then(setLegal).catch(()=>setLegal(null));},[]);
+
+  const privacy=page==="privacy",terms=page==="terms";
+
+  return <div className="modal-backdrop policy-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="policy-dialog" role="dialog" aria-modal="true" aria-labelledby="policy-title"><button className="modal-close icon-button" aria-label="Close" onClick={onClose}><Icon name="close"/></button><span className="section-eyebrow">PROJECTPULSE · {privacy?"YOUR INFORMATION":terms?"SERVICE TERMS":"BROWSER STORAGE"}</span><h2 id="policy-title">{privacy?"Privacy notice":terms?"Terms of service":"Cookie notice"}</h2><p className="policy-updated">Effective October 26, 2026</p>{privacy?<><h3>Operator and contact</h3><p>{legal?.operator??"Operator details are not configured."}. Support: {legal?.support_email??"not configured"}. Hosting location: {legal?.hosting_location??"not configured"}.</p><h3>Information and use</h3><p>ProjectPulse stores your account name, email, and the organizations, workspaces, projects, tasks, and planning details you add to provide project planning and account access. We do not sell personal information. No optional analytics or advertising trackers are enabled.</p><h3>Guest sessions</h3><p>Guest work is held in this browser tab’s session storage. It is not sent to the application database until you save it to an account. A save is processed as one database transaction; if it fails, guest data remains available to retry.</p><h3>Retention, export and deletion</h3><p>Retention period: {legal?.retention_period??"not configured"}. To request deletion: {legal?.deletion_process??"not configured"}. Signed-in users can export account or workspace data and delete their account in Settings. Removing an account deletes sole-member organization data; shared workspace data remains for other members.</p></>:terms?<><h3>Using the service</h3><p>ProjectPulse provides project planning tools. You are responsible for the information you add and for keeping your sign-in details secure. Do not use the service to store information you are not authorized to manage.</p><h3>Workspaces and data</h3><p>Workspace members may access data according to their assigned role. Owners and admins can manage invitations and workspace settings. Keep your own exports of information you need.</p><h3>Availability and support</h3><p>The service is provided as available and may change over time. For support or account requests, contact {legal?.support_email??"the configured support contact"}.</p><h3>Account closure</h3><p>You may export your data and request account deletion from Settings. Deleting an account may leave shared workspace data available to other members.</p></>:<><h3>Cookies</h3><p>After sign-in, the server uses an essential session cookie to recognize your account. It is HttpOnly, SameSite=Lax, and Secure when served in production over HTTPS.</p><h3>Guest browser storage</h3><p>Guest workspace content and dismissal of this notice use sessionStorage, not cookies. No analytics or advertising cookies are used in this build.</p></>}<button className="button button-primary policy-close" onClick={onClose}>Close</button></section></div>;
+
 }
