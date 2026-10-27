@@ -159,151 +159,6 @@ export type ProjectSchedule = {
   warnings: ScheduleWarning[];
 };
 
-export type Resource = {
-  id: number;
-  project_id: number;
-  name: string;
-  role: string;
-  capacity_work_minutes_per_day: number;
-  created_at: string;
-  updated_at: string;
-};
-
-export type Assignment = {
-  id: number;
-  project_id: number;
-  resource_id: number;
-  task_id: number;
-  allocation_percent: number;
-  created_at: string;
-  updated_at: string;
-};
-
-export type WorkloadLoadDay = {
-  date: string;
-  assigned_work_minutes: number;
-  load_percent: number;
-  overloaded: boolean;
-};
-
-export type WorkloadResource = {
-  resource_id: number;
-  resource_name: string;
-  capacity_work_minutes_per_day: number;
-  total_assigned_work_minutes: number;
-  load_days: WorkloadLoadDay[];
-  overloaded_dates: string[];
-};
-
-export type WorkloadTaskContribution = {
-  task_id: number;
-  task_name: string;
-  task_priority: number;
-  allocation_percent: number;
-  allocated_work_minutes: number;
-};
-
-export type WorkloadOverload = {
-  resource_id: number;
-  resource_name: string;
-  date: string;
-  assigned_work_minutes: number;
-  capacity_work_minutes: number;
-  excess_work_minutes: number;
-  load_percent: number;
-  tasks: WorkloadTaskContribution[];
-};
-
-export type ProjectWorkload = {
-  resources: WorkloadResource[];
-  overloads: WorkloadOverload[];
-  summary: {
-    resource_count: number;
-    assignment_count: number;
-    load_day_count: number;
-    overload_count: number;
-    overloaded_resource_count: number;
-    excess_work_minutes: number;
-  };
-};
-
-export type LevelingProposal = {
-  resource_id: number;
-  resource_name: string;
-  task_id: number;
-  task_name: string;
-  proposed_start: string;
-  proposed_constraint_type: ConstraintType;
-};
-
-export type LevelingPreview = {
-  project_id: number;
-  project_version: number;
-  before: {
-    excess_work_minutes: number;
-    overload_count: number;
-    project_finish: string;
-  };
-  after: {
-    excess_work_minutes: number;
-    overload_count: number;
-    project_finish: string;
-  };
-  proposals: LevelingProposal[];
-  remaining_overloads: WorkloadOverload[];
-  notes: string[];
-};
-
-export type RiskTask = {
-  task_id: number;
-  task_name: string;
-  duration_work_minutes: number;
-  estimates: {
-    optimistic: number;
-    most_likely: number;
-    pessimistic: number;
-  } | null;
-  p10_work_minutes: number;
-  p50_work_minutes: number;
-  p90_work_minutes: number;
-  critical_frequency: number;
-};
-
-export type RiskSimulation = {
-  project_id: number;
-  project_version: number;
-  iterations: number;
-  seed: number;
-  target_finish: string | null;
-  deterministic_finish: string;
-  finish_percentiles: Record<string, string>;
-  target_probability: number | null;
-  tasks: RiskTask[];
-  warnings: ScheduleWarning[];
-  assumptions: string[];
-};
-
-export type Notification = {
-  id: number;
-  organization_id: number | null;
-  project_id: number | null;
-  task_id: number | null;
-  kind: string;
-  message: string;
-  read_at: string | null;
-  created_at: string;
-};
-
-export type Invitation = {
-  id: number;
-  organization_id: number;
-  email: string;
-  role: Exclude<Role, "owner">;
-  expires_at: string;
-  accepted_at: string | null;
-  created_at: string;
-};
-
 export type ProjectCreate = {
   name: string;
   start_date?: string | null;
@@ -535,6 +390,21 @@ function queryString(
   return value ? `?${value}` : "";
 }
 
+// Load the complete project plan, while retaining explicit paging for filtered callers.
+async function readAll<T, K extends string>(path: string, key: K): Promise<T[]> {
+  const items: T[] = [];
+  let offset = 0;
+  while (true) {
+    const body = await request<Record<K, T[]> & { limit?: number }>(
+      `${path}${offset ? queryString({ offset }) : ""}`,
+    );
+    const page = body[key];
+    items.push(...page);
+    if (!body.limit || page.length < body.limit) return items;
+    offset += page.length;
+  }
+}
+
 export async function listOrganizations(): Promise<Organization[]> {
   const body = await request<{ organizations: Organization[] }>(
     "/organizations",
@@ -718,6 +588,10 @@ export async function listTasks(
     offset?: number;
   } = {},
 ): Promise<Task[]> {
+  if (Object.keys(filters).length === 0) {
+    return readAll<Task, "tasks">(`/projects/${projectId}/tasks`, "tasks");
+  }
+
   const body = await request<{ tasks: Task[] }>(
     `/projects/${projectId}/tasks${queryString(filters)}`,
   );
@@ -757,10 +631,7 @@ export async function deleteTask(
 export async function listDependencies(
   projectId: number,
 ): Promise<Dependency[]> {
-  const body = await request<{ dependencies: Dependency[] }>(
-    `/projects/${projectId}/dependencies`,
-  );
-  return body.dependencies;
+  return readAll<Dependency, "dependencies">(`/projects/${projectId}/dependencies`, "dependencies");
 }
 
 export async function createDependency(
@@ -784,197 +655,16 @@ export async function deleteDependency(
 }
 
 
-export async function listResources(projectId: number): Promise<Resource[]> {
-  const body = await request<{ resources: Resource[] }>(
-    `/projects/${projectId}/resources?limit=100`,
-  );
-  return body.resources;
-}
+export type ProjectSummary = {
+  project_version: number;
+  task_count: number;
+  completed_task_count: number;
+  completion_percent: number;
+  status_counts: Record<TaskStatus, number>;
+  duration_stats: { mean: number; median: number; p90: number } | null;
+};
 
-export async function createResource(
-  projectId: number,
-  payload: {
-    name: string;
-    role?: string;
-    capacity_work_minutes_per_day?: number;
-  },
-): Promise<{ resource: Resource; project_version: number }> {
-  return request<{ resource: Resource; project_version: number }>(
-    `/projects/${projectId}/resources`,
-    { method: "POST", body: JSON.stringify(payload) },
-  );
-}
-
-export async function updateResource(
-  projectId: number,
-  resourceId: number,
-  payload: {
-    name?: string;
-    role?: string;
-    capacity_work_minutes_per_day?: number;
-  },
-): Promise<{ resource: Resource; project_version: number }> {
-  return request<{ resource: Resource; project_version: number }>(
-    `/projects/${projectId}/resources/${resourceId}`,
-    { method: "PATCH", body: JSON.stringify(payload) },
-  );
-}
-
-export async function deleteResource(
-  projectId: number,
-  resourceId: number,
-): Promise<void> {
-  await request<void>(`/projects/${projectId}/resources/${resourceId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function listAssignments(
-  projectId: number,
-): Promise<Assignment[]> {
-  const body = await request<{ assignments: Assignment[] }>(
-    `/projects/${projectId}/assignments?limit=100`,
-  );
-  return body.assignments;
-}
-
-export async function createAssignment(
-  projectId: number,
-  payload: {
-    resource_id: number;
-    task_id: number;
-    allocation_percent?: number;
-  },
-): Promise<{ assignment: Assignment; project_version: number }> {
-  return request<{ assignment: Assignment; project_version: number }>(
-    `/projects/${projectId}/assignments`,
-    { method: "POST", body: JSON.stringify(payload) },
-  );
-}
-
-export async function updateAssignment(
-  projectId: number,
-  assignmentId: number,
-  payload: { allocation_percent: number },
-): Promise<{ assignment: Assignment; project_version: number }> {
-  return request<{ assignment: Assignment; project_version: number }>(
-    `/projects/${projectId}/assignments/${assignmentId}`,
-    { method: "PATCH", body: JSON.stringify(payload) },
-  );
-}
-
-export async function deleteAssignment(
-  projectId: number,
-  assignmentId: number,
-): Promise<void> {
-  await request<void>(
-    `/projects/${projectId}/assignments/${assignmentId}`,
-    { method: "DELETE" },
-  );
-}
-
-export async function getProjectWorkload(
-  projectId: number,
-): Promise<ProjectWorkload> {
-  const body = await request<{ workload: ProjectWorkload }>(
-    `/projects/${projectId}/workload`,
-  );
-  return body.workload;
-}
-
-export async function getLevelingPreview(
-  projectId: number,
-): Promise<LevelingPreview> {
-  const body = await request<{ preview: LevelingPreview }>(
-    `/projects/${projectId}/leveling-preview`,
-  );
-  return body.preview;
-}
-
-
-export async function runRiskSimulation(
-  projectId: number,
-  payload: { iterations?: number; seed?: number } = {},
-): Promise<RiskSimulation> {
-  const body = await request<{ simulation: RiskSimulation }>(
-    `/projects/${projectId}/risk-simulation`,
-    { method: "POST", body: JSON.stringify(payload) },
-  );
-  return body.simulation;
-}
-
-
-export async function listNotifications(): Promise<Notification[]> {
-  const body = await request<{ notifications: Notification[] }>(
-    "/notifications?limit=100",
-  );
-  return body.notifications;
-}
-
-export async function markNotificationRead(
-  notificationId: number,
-): Promise<Notification> {
-  const body = await request<{ notification: Notification }>(
-    `/notifications/${notificationId}`,
-    { method: "PATCH" },
-  );
-  return body.notification;
-}
-
-export async function markAllNotificationsRead(): Promise<number> {
-  const body = await request<{ marked_read: number }>(
-    "/notifications/read-all",
-    { method: "POST" },
-  );
-  return body.marked_read;
-}
-
-export async function listInvitations(
-  organizationId: number,
-): Promise<Invitation[]> {
-  const body = await request<{ invitations: Invitation[] }>(
-    `/organizations/${organizationId}/invitations`,
-  );
-  return body.invitations;
-}
-
-export async function createInvitation(
-  organizationId: number,
-  email: string,
-  role: Exclude<Role, "owner">,
-): Promise<{ invitation: Invitation; accept_token?: string }> {
-  return request<{ invitation: Invitation; accept_token?: string }>(
-    `/organizations/${organizationId}/invitations`,
-    { method: "POST", body: JSON.stringify({ email, role }) },
-  );
-}
-
-export async function revokeInvitation(
-  organizationId: number,
-  invitationId: number,
-): Promise<void> {
-  await request<void>(
-    `/organizations/${organizationId}/invitations/${invitationId}`,
-    { method: "DELETE" },
-  );
-}
-
-export async function acceptInvitation(
-  token: string,
-): Promise<{ organization_id: number }> {
-  return request<{ organization_id: number }>("/invitations/accept", {
-    method: "POST",
-    body: JSON.stringify({ token }),
-  });
-}
-
-export function accountExportUrl(): string {
-  return `${API_BASE}/account/export`;
-}
-
-export async function deleteAccount(password: string): Promise<void> {
-  await request<void>("/account", {
-    method: "DELETE",
-    body: JSON.stringify({ password }),
-  });
+export async function getProjectSummary(projectId: number): Promise<ProjectSummary> {
+  const body = await request<{ summary: ProjectSummary }>(`/projects/${projectId}/summary`);
+  return body.summary;
 }

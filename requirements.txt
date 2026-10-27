@@ -10,12 +10,9 @@ Flask-WTF>=1.2,<2.0
 Flask-Login>=0.6,<1.0
 python-dotenv>=1.0,<2.0
 
-# Tabular analytics and risk simulation
+# Compact project analytics
 numpy>=2.2,<3.0
 pandas>=2.2,<4.0
-
-# iCalendar (ICS) export
-icalendar>=6.0,<8.0
 
 # Development and automated checks
 pytest>=8.0,<10.0

@@ -1,5 +1,7 @@
+"""Legacy storage retained for existing database and migration compatibility."""
+
 from app.extensions import db
-from app.models.base import IntPKMixin, TimestampMixin, iso_utc
+from app.models.base import IntPKMixin
 
 
 class Notification(IntPKMixin, db.Model):
@@ -35,17 +37,6 @@ class Notification(IntPKMixin, db.Model):
         db.DateTime(timezone=True), nullable=False, index=True
     )
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "organization_id": self.organization_id,
-            "project_id": self.project_id,
-            "task_id": self.task_id,
-            "kind": self.kind,
-            "message": self.message,
-            "read_at": iso_utc(self.read_at),
-            "created_at": iso_utc(self.created_at),
-        }
 
 
 class WorkspaceInvitation(IntPKMixin, db.Model):
@@ -79,14 +70,3 @@ class WorkspaceInvitation(IntPKMixin, db.Model):
             name="invitation_role",
         ),
     )
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "organization_id": self.organization_id,
-            "email": self.email,
-            "role": self.role,
-            "expires_at": iso_utc(self.expires_at),
-            "accepted_at": iso_utc(self.accepted_at),
-            "created_at": iso_utc(self.created_at),
-        }

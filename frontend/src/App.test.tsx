@@ -62,7 +62,7 @@ describe("initial load", () => {
     stubHealth(healthyResponse());
     render(<App />);
 
-    expect(screen.getByText("One moment.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
 
     await act(async () => {
       session.resolve(null);
@@ -115,7 +115,7 @@ describe("initial load", () => {
 
     expect(await screen.findByText("Demo Owner")).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Organizations" }),
+      await screen.findByRole("button", { name: "Manage organizations" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Sign out" }),

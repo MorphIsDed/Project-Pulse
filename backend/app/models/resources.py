@@ -1,5 +1,7 @@
+"""Legacy storage retained for existing database and migration compatibility."""
+
 from app.extensions import db
-from app.models.base import IntPKMixin, TimestampMixin, iso_utc
+from app.models.base import IntPKMixin, TimestampMixin
 
 
 class Resource(IntPKMixin, TimestampMixin, db.Model):
@@ -37,19 +39,6 @@ class Resource(IntPKMixin, TimestampMixin, db.Model):
             name="uq_resources_project_name",
         ),
     )
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "project_id": self.project_id,
-            "name": self.name,
-            "role": self.role,
-            "capacity_work_minutes_per_day": (
-                self.capacity_work_minutes_per_day
-            ),
-            "created_at": iso_utc(self.created_at),
-            "updated_at": iso_utc(self.updated_at),
-        }
 
     def __repr__(self) -> str:
         return f"<Resource {self.name}>"
@@ -94,17 +83,6 @@ class Assignment(IntPKMixin, TimestampMixin, db.Model):
             name="uq_assignments_resource_task",
         ),
     )
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "project_id": self.project_id,
-            "resource_id": self.resource_id,
-            "task_id": self.task_id,
-            "allocation_percent": self.allocation_percent,
-            "created_at": iso_utc(self.created_at),
-            "updated_at": iso_utc(self.updated_at),
-        }
 
     def __repr__(self) -> str:
         return f"<Assignment {self.resource_id}->{self.task_id}>"

@@ -4,7 +4,7 @@
 
 The backend has a production WSGI image definition in `backend/Dockerfile`. Run it behind a TLS-terminating reverse proxy, and serve the Vite build from the same site origin. Forward `/api/*` to the API on port 8000. The image runs Gunicorn with two workers and logs access and error output to standard streams.
 
-The image sets `APP_ENV=production` and defaults `DATABASE_URL` to `sqlite:////data/projectpulse.sqlite3`. Mount a persistent writable volume at `/data` and keep the volume when replacing containers. Set `SECRET_KEY` to a cryptographically random value at runtime; the app refuses to start in production without it. Set `PUBLIC_URL` to the browser-facing HTTPS origin so invitation links point to the deployed frontend.
+The image sets `APP_ENV=production` and defaults `DATABASE_URL` to `sqlite:////data/projectpulse.sqlite3`. Mount a persistent writable volume at `/data` and keep the volume when replacing containers. Set `SECRET_KEY` to a cryptographically random value at runtime; the app refuses to start in production without it.
 
 Production cookies are secure and HTTP-only. Build the frontend with `npm run build` and serve `frontend/dist` from the reverse proxy or static host on the same site origin as the API. Do not use Vite's development server or Flask's development server in production.
 
@@ -14,7 +14,6 @@ Build from the repository root because the Dockerfile copies the root `requireme
 docker build -f backend/Dockerfile -t projectpulse-api .
 docker run --rm \
   -e SECRET_KEY="replace-with-a-random-secret" \
-  -e PUBLIC_URL="https://pulse.example.com" \
   -v projectpulse-data:/data \
   -p 8000:8000 \
   projectpulse-api
@@ -31,10 +30,6 @@ docker run --rm -e SECRET_KEY="replace-with-a-random-secret" \
 
 `flask seed-demo` refuses production unless `--force` is passed.
 
-## Email
-
-Organization invitations use SMTP. Configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM`, and optional `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_USE_TLS`. Without SMTP configuration, production invitation creation returns `503 email_delivery_failed`; the invitation is saved and can still be shared manually. In development, missing SMTP logs the invitation email instead. There is no email verification or password reset flow.
-
 ## Database and migrations
 
 SQLite is the only supported database. Flask-Migrate/Alembic is the schema-change path; `init-db` from older prototype notes is not used. Apply upgrades with `flask --app wsgi db upgrade` from `/app` or through the migration command above. Review migrations before applying, and back up the database before an upgrade.
@@ -45,6 +40,6 @@ Backups are not automated. For SQLite, use the SQLite online backup API or a sto
 
 ## Health and operations
 
-Terminate HTTPS at the proxy and redirect HTTP to HTTPS there. Restrict direct access to the backend port. `GET /api/v1/health` checks database connectivity and returns `503` when the query fails. Collect stdout/stderr, alert on repeated 5xx responses, and monitor the response time of risk simulation: it runs synchronously and took about 35 seconds for 1,000 tasks with 2,000 iterations on the benchmark machine.
+Terminate HTTPS at the proxy and redirect HTTP to HTTPS there. Restrict direct access to the backend port. `GET /api/v1/health` checks database connectivity and returns `503` when the query fails. Collect stdout/stderr, alert on repeated 5xx responses.
 
 There is no external error-monitoring integration. Request IDs are returned in `X-Request-ID` and are included in logs and error envelopes.

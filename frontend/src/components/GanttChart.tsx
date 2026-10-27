@@ -5,7 +5,6 @@ const ROW_HEIGHT = 30;
 const HEADER_HEIGHT = 46;
 const LABEL_WIDTH = 230;
 const BAR_HEIGHT = 16;
-const BAR_OFFSET = 7;
 const RIGHT_PADDING = 24;
 
 type TaskGeometry = {

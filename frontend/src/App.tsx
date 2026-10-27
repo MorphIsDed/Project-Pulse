@@ -11,8 +11,6 @@ function AppContent() {
   const { user, loading, logout } = useAuth();
   const [health, setHealth] = useState<HealthState>("loading");
   const [healthText, setHealthText] = useState("Connecting to API…");
-  const [signingOut, setSigningOut] = useState(false);
-
   useEffect(() => {
     let active = true;
 
@@ -37,60 +35,11 @@ function AppContent() {
     };
   }, []);
 
-  async function handleLogout() {
-    setSigningOut(true);
-    try {
-      await logout();
-    } catch {
-      setSigningOut(false);
-      return;
-    }
-    setSigningOut(false);
-  }
-
-  return (
-    <main className="shell">
-      <header className="topbar">
-        <span className="mark">P</span>
-        <span>ProjectPulse</span>
-        <span className="tag">LOCAL PLANNING</span>
-        {user ? (
-          <>
-            <span className="user-chip">{user.display_name}</span>
-            <button
-              className="link-button"
-              type="button"
-              onClick={handleLogout}
-              disabled={signingOut}
-            >
-              {signingOut ? "Signing out…" : "Sign out"}
-            </button>
-          </>
-        ) : null}
-      </header>
-
-      {loading ? (
-        <section className="welcome">
-          <p className="eyebrow">LOADING SESSION</p>
-          <h1>One moment.</h1>
-        </section>
-      ) : user ? (
-        <WorkspacePage />
-      ) : (
-        <LoginPage health={health} status={healthText} />
-      )}
-
-      <footer>
-        ProjectPulse <span>•</span> Academic planning workspace
-      </footer>
-    </main>
-  );
+  if (loading) return <main className="session-loading" role="status">Loading your workspace…</main>;
+  if (user) return <WorkspacePage userName={user.display_name} onLogout={logout} />;
+  return <main className="login-shell"><div className="brand"><span className="mark">P</span> ProjectPulse</div><LoginPage health={health} status={healthText} /><footer>Your plans. A clearer perspective.</footer></main>;
 }
 
 export default function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
+  return <AuthProvider><AppContent /></AuthProvider>;
 }

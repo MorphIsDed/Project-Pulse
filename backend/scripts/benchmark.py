@@ -1,27 +1,16 @@
-"""Reproduce the M9 schedule and risk-simulation measurements."""
+"""Measure scheduling and compact summary computation for 1,000 tasks."""
 
 import argparse
 import json
 import platform
 import statistics
-import tempfile
 import time
 from datetime import date
-from pathlib import Path
 
-from app import create_app
-from app.extensions import db
-from app.models.planning import (
-    Dependency,
-    Project,
-    ProjectCalendar,
-    Task,
-    default_weekly_rules,
-)
-from app.models.tenancy import Organization, Workspace
+from app.models.planning import default_weekly_rules
 from app.scheduling.calendar import WorkingCalendar
 from app.scheduling.cpm import DependencyInput, TaskInput, compute_schedule
-from app.services.risk import simulate_project_risk
+from app.services.summary import summarize_tasks
 
 TASK_COUNT = 1000
 CHAIN_LENGTH = 10
@@ -58,70 +47,16 @@ def measure_schedule(runs: int) -> list[float]:
     return timings
 
 
-def measure_risk(database_path: Path, iterations: int) -> float:
-    app = create_app(
-        "testing",
-        {"SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path.as_posix()}"},
-    )
-    with app.app_context():
-        db.create_all()
-        organization = Organization(name="Benchmark organization")
-        workspace = Workspace(
-            organization=organization, name="Benchmark workspace"
-        )
-        project = Project(
-            workspace=workspace,
-            name="Benchmark project",
-            start_date=date(2026, 1, 5),
-        )
-        project.calendar = ProjectCalendar(
-            name="Standard calendar",
-            timezone="UTC",
-            weekly_rules=default_weekly_rules(),
-            exceptions=[],
-        )
-        db.session.add(project)
-        db.session.flush()
-        tasks = [
-            Task(
-                project_id=project.id,
-                name=f"Task {index + 1}",
-                duration_work_minutes=480,
-                estimate_optimistic=240,
-                estimate_most_likely=480,
-                estimate_pessimistic=720,
-            )
-            for index in range(TASK_COUNT)
-        ]
-        db.session.add_all(tasks)
-        db.session.flush()
-        db.session.add_all(
-            [
-                Dependency(
-                    project_id=project.id,
-                    predecessor_task_id=tasks[
-                        chain_start + offset
-                    ].id,
-                    successor_task_id=tasks[
-                        chain_start + offset + 1
-                    ].id,
-                    type="FS",
-                )
-                for chain_start in range(0, TASK_COUNT, CHAIN_LENGTH)
-                for offset in range(CHAIN_LENGTH - 1)
-            ]
-        )
-        db.session.commit()
-
-        try:
-            started = time.perf_counter()
-            simulate_project_risk(
-                project, {"iterations": iterations, "seed": 42}
-            )
-            return time.perf_counter() - started
-        finally:
-            db.session.remove()
-            db.engine.dispose()
+def measure_summary(runs: int) -> list[float]:
+    records = [("completed" if i % 3 == 0 else "not_started", 60 + i % 480)
+               for i in range(TASK_COUNT)]
+    summarize_tasks(records, 1)
+    timings = []
+    for _ in range(runs):
+        started = time.perf_counter()
+        summarize_tasks(records, 1)
+        timings.append(time.perf_counter() - started)
+    return timings
 
 
 def summarize(values: list[float]) -> dict:
@@ -136,12 +71,10 @@ def summarize(values: list[float]) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--iterations", type=int, default=100)
     args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory() as temporary:
-        database_path = Path(temporary) / "benchmark.sqlite3"
-        risk_seconds = measure_risk(database_path, args.iterations)
+    if args.runs < 1:
+        parser.error("--runs must be positive")
 
     result = {
         "environment": {
@@ -154,10 +87,9 @@ def main() -> None:
             "chains": TASK_COUNT // CHAIN_LENGTH,
             "chain_length": CHAIN_LENGTH,
             "dependencies": TASK_COUNT - (TASK_COUNT // CHAIN_LENGTH),
-            "risk_iterations": args.iterations,
         },
         "schedule": summarize(measure_schedule(args.runs)),
-        "risk_simulation_seconds": round(risk_seconds, 4),
+        "summary_computation": summarize(measure_summary(args.runs)),
     }
     print(json.dumps(result, indent=2))
 

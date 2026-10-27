@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,25 +25,10 @@ const apiMocks = vi.hoisted(() => ({
   listDependencies: vi.fn(),
   getProjectCalendar: vi.fn(),
   getProjectSchedule: vi.fn(),
+  getProjectSummary: vi.fn(),
+  updateTask: vi.fn(),
+  deleteTask: vi.fn(),
   updateProjectCalendar: vi.fn(),
-  listResources: vi.fn(),
-  listAssignments: vi.fn(),
-  getProjectWorkload: vi.fn(),
-  getLevelingPreview: vi.fn(),
-  createResource: vi.fn(),
-  updateResource: vi.fn(),
-  deleteResource: vi.fn(),
-  createAssignment: vi.fn(),
-  updateAssignment: vi.fn(),
-  deleteAssignment: vi.fn(),
-  listNotifications: vi.fn(),
-  listInvitations: vi.fn(),
-  markNotificationRead: vi.fn(),
-  markAllNotificationsRead: vi.fn(),
-  createInvitation: vi.fn(),
-  revokeInvitation: vi.fn(),
-  acceptInvitation: vi.fn(),
-  deleteAccount: vi.fn(),
   createOrganization: vi.fn(),
   createWorkspace: vi.fn(),
   createProject: vi.fn(),
@@ -218,39 +203,8 @@ function stubOwnerProject() {
   apiMocks.listDependencies.mockResolvedValue([dependency]);
   apiMocks.getProjectCalendar.mockResolvedValue(calendar);
   apiMocks.getProjectSchedule.mockResolvedValue(schedule);
-  apiMocks.listResources.mockResolvedValue([]);
-  apiMocks.listAssignments.mockResolvedValue([]);
-  apiMocks.getProjectWorkload.mockResolvedValue({
-    resources: [],
-    overloads: [],
-    summary: {
-      resource_count: 0,
-      assignment_count: 0,
-      load_day_count: 0,
-      overload_count: 0,
-      overloaded_resource_count: 0,
-      excess_work_minutes: 0,
-    },
-  });
-  apiMocks.listNotifications.mockResolvedValue([]);
-  apiMocks.listInvitations.mockResolvedValue([]);
-  apiMocks.getLevelingPreview.mockResolvedValue({
-    project_id: 100,
-    project_version: 1,
-    before: {
-      excess_work_minutes: 0,
-      overload_count: 0,
-      project_finish: "2026-01-10",
-    },
-    after: {
-      excess_work_minutes: 0,
-      overload_count: 0,
-      project_finish: "2026-01-10",
-    },
-    proposals: [],
-    remaining_overloads: [],
-    notes: ["No overloads detected."],
-  });
+  apiMocks.getProjectSummary.mockResolvedValue({ project_version: 1, task_count: 2, completed_task_count: 0, completion_percent: 0, status_counts: { not_started: 2, in_progress: 0, blocked: 0, completed: 0 }, duration_stats: null });
+
 }
 
 beforeEach(() => {
@@ -259,208 +213,141 @@ beforeEach(() => {
 });
 
 describe("WorkspacePage", () => {
-  it("loads the organization, workspace, project, tasks, and dependencies", async () => {
-    render(<WorkspacePage />);
-
-    expect(
-      await screen.findByRole("heading", { name: "Demo Project" }),
-    ).toBeInTheDocument();
-    expect(await screen.findByText(/lag 0 min/)).toBeInTheDocument();
-    expect(screen.getAllByDisplayValue("Alpha").length).toBeGreaterThan(0);
-    expect(screen.getAllByDisplayValue("Beta").length).toBeGreaterThan(0);
-    expect(await screen.findByText("2026-01-06 09:00")).toBeInTheDocument();
-    expect(apiMocks.listWorkspaces).toHaveBeenCalledWith(1);
-    expect(apiMocks.listMembers).toHaveBeenCalledWith(1);
-    expect(apiMocks.listProjects).toHaveBeenCalledWith(10);
+  it("loads summary and tasks, then exposes Gantt in Timeline", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await screen.findByRole("button", { name: /Alpha/ });
+    expect(screen.getByText("Total tasks")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Gantt/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Timeline" }));
+    expect(await screen.findByRole("img", { name: /Gantt chart/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Export calendar" })).toHaveAttribute("href", "/api/v1/projects/100/export.ics");
     expect(apiMocks.listTasks).toHaveBeenCalledWith(100);
-    expect(apiMocks.getProjectSchedule).toHaveBeenCalledWith(100);
+    expect(apiMocks.getProjectSummary).toHaveBeenCalledWith(100);
   });
 
-  it("creates an organization and selects it", async () => {
-    const browser = userEvent.setup();
-    const secondOrg = { ...owner, id: 2, name: "Second Org" };
-    apiMocks.listOrganizations.mockResolvedValue([]);
-    apiMocks.createOrganization.mockResolvedValue(secondOrg);
-    apiMocks.listWorkspaces.mockResolvedValue([]);
-    apiMocks.listMembers.mockResolvedValue([]);
-
-    render(<WorkspacePage />);
-    expect(
-      await screen.findByText("No organizations yet. Create one to begin."),
-    ).toBeInTheDocument();
-
-    await browser.type(
-      screen.getByLabelText("New organization"),
-      "Second Org",
-    );
-    await browser.click(
-      screen.getByRole("button", { name: "Create organization" }),
-    );
-
-    expect(
-      await screen.findByRole("option", { name: "Second Org (owner)" }),
-    ).toBeInTheDocument();
-    expect(apiMocks.createOrganization).toHaveBeenCalledWith("Second Org");
-    expect(apiMocks.listWorkspaces).toHaveBeenCalledWith(2);
+  it("creates an organization through its management dialog", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await screen.findByRole("button", { name: /Alpha/ });
+    apiMocks.createOrganization.mockResolvedValue({ ...owner, id: 2, name: "New Org" });
+    await user.click(screen.getByRole("button", { name: "Manage organizations" }));
+    await user.type(screen.getByLabelText("New organization"), "New Org");
+    await user.click(screen.getByRole("button", { name: "Create organization" }));
+    await waitFor(() => expect(apiMocks.createOrganization).toHaveBeenCalledWith("New Org"));
+    await waitFor(() => expect(screen.getByLabelText("Current organization")).toHaveValue("2"));
   });
 
-  it("creates a project in the current workspace", async () => {
-    const browser = userEvent.setup();
-    apiMocks.listProjects.mockResolvedValue([]);
+  it("creates a project in the selected workspace", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await screen.findByRole("button", { name: /Alpha/ });
     apiMocks.createProject.mockResolvedValue(secondProject);
     apiMocks.getProject.mockResolvedValue(secondProject);
-    apiMocks.listTasks.mockResolvedValue([]);
-    apiMocks.listDependencies.mockResolvedValue([]);
-    apiMocks.getProjectCalendar.mockResolvedValue({
-      ...calendar,
-      id: 6,
-      project_id: 101,
-    });
-
-    render(<WorkspacePage />);
-    expect(
-      await screen.findByText("No projects in this workspace."),
-    ).toBeInTheDocument();
-
-    await browser.type(screen.getByLabelText("New project"), "Second Project");
-    await browser.click(screen.getByRole("button", { name: "Create project" }));
-
-    expect(
-      await screen.findByRole("heading", { name: "Second Project" }),
-    ).toBeInTheDocument();
-    expect(apiMocks.createProject).toHaveBeenCalledWith(10, {
-      name: "Second Project",
-      start_date: null,
-      target_finish: null,
-    });
+    await user.click(screen.getByRole("button", { name: /New project/ }));
+    await user.type(screen.getByRole("textbox", { name: "New project" }), "Second Project");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(() => expect(apiMocks.createProject).toHaveBeenCalledWith(10, { name: "Second Project", start_date: null, target_finish: null }));
+    expect(await screen.findByRole("heading", { name: "Second Project" })).toBeInTheDocument();
   });
 
-  it("creates a task and refreshes the project", async () => {
-    const browser = userEvent.setup();
-    apiMocks.createTask.mockResolvedValue({
-      task: makeTask(3, "Gamma"),
-      project_version: 2,
-    });
-    apiMocks.listTasks
-      .mockResolvedValueOnce([alpha, beta])
-      .mockResolvedValue([alpha, beta, makeTask(3, "Gamma")]);
-
-    render(<WorkspacePage />);
-    await screen.findByRole("heading", { name: "Demo Project" });
-    await screen.findByRole("button", { name: "Add dependency" });
-
-    await browser.type(screen.getByLabelText("New task name"), "Gamma");
-    await browser.click(screen.getByRole("button", { name: "Add task" }));
-
-    await waitFor(() =>
-      expect(apiMocks.createTask).toHaveBeenCalledWith(100, {
-        name: "Gamma",
-        parent_task_id: null,
-        duration_work_minutes: 0,
-        priority: 3,
-      }),
-    );
-    expect(await screen.findByDisplayValue("Gamma")).toBeInTheDocument();
+  it("creates a task and refreshes insights", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await screen.findByRole("button", { name: /Alpha/ });
+    await user.click(screen.getByRole("button", { name: "Add task" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("New task name"), "Gamma");
+    await user.click(within(dialog).getByRole("button", { name: "Add task" }));
+    await waitFor(() => expect(apiMocks.createTask).toHaveBeenCalledWith(100, { name: "Gamma", parent_task_id: null, duration_work_minutes: 0, priority: 3 }));
+    await waitFor(() => expect(apiMocks.getProjectSummary).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("creates a dependency between the first two tasks", async () => {
-    const browser = userEvent.setup();
-    apiMocks.listDependencies.mockResolvedValue([]);
-    apiMocks.createDependency.mockResolvedValue({
-      dependency,
-      project_version: 2,
-    });
-
-    render(<WorkspacePage />);
-    await screen.findByRole("heading", { name: "Demo Project" });
-    await screen.findByRole("button", { name: "Add dependency" });
-
-    await browser.click(
-      screen.getByRole("button", { name: "Add dependency" }),
-    );
-
-    await waitFor(() =>
-      expect(apiMocks.createDependency).toHaveBeenCalledWith(100, {
-        predecessor_task_id: 1,
-        successor_task_id: 2,
-        type: "FS",
-        lag_work_minutes: 0,
-      }),
-    );
+  it("edits a task, preserves failed input, and supports retry", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await user.click(await screen.findByRole("button", { name: /Alpha/ }));
+    const input = screen.getByLabelText("Task name");
+    await user.clear(input); await user.type(input, "Updated name");
+    apiMocks.updateTask.mockRejectedValueOnce(new ApiError(409, "conflict", "Conflict"));
+    await user.click(screen.getByRole("button", { name: "Save task" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Conflict");
+    expect(input).toHaveValue("Updated name");
+    apiMocks.updateTask.mockResolvedValueOnce({ task: { ...alpha, name: "Updated name" }, project_version: 2 });
+    await user.click(screen.getByRole("button", { name: "Save task" }));
+    await waitFor(() => expect(apiMocks.updateTask).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(apiMocks.getProjectSummary).toHaveBeenCalledTimes(2));
   });
 
-  it("updates the working calendar with the current project version", async () => {
-    const browser = userEvent.setup();
-    const updatedCalendar = { ...calendar, timezone: "Europe/London" };
-    apiMocks.updateProjectCalendar.mockResolvedValue({
-      calendar: updatedCalendar,
-      project: { ...project, version: 2 },
-    });
-
-    render(<WorkspacePage />);
-    await screen.findByRole("heading", { name: "Demo Project" });
-
-    const timezone = await screen.findByLabelText("Calendar timezone");
-    await browser.clear(timezone);
-    await browser.type(timezone, "Europe/London");
-    await browser.click(
-      screen.getByRole("button", { name: "Save calendar" }),
-    );
-
-    await waitFor(() =>
-      expect(apiMocks.updateProjectCalendar).toHaveBeenCalledWith(100, {
-        version: 1,
-        timezone: "Europe/London",
-        weekly_rules: {
-          mon: [["09:00", "17:00"]],
-          tue: [],
-          wed: [],
-          thu: [],
-          fri: [],
-          sat: [],
-          sun: [],
-        },
-      }),
-    );
-    expect(await screen.findByDisplayValue("Europe/London")).toBeInTheDocument();
+  it("shows task dependencies and submits the selected successor", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await user.click(await screen.findByRole("button", { name: /Beta/ }));
+    expect(screen.getByText(/lag 0 min/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add dependency" }));
+    await waitFor(() => expect(apiMocks.createDependency).toHaveBeenCalledWith(100, { predecessor_task_id: 1, successor_task_id: 2, type: "FS", lag_work_minutes: 0 }));
   });
 
-  it("gives viewers read-only planning controls", async () => {
+  it("updates the calendar with the current project version", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await screen.findByRole("button", { name: /Alpha/ });
+    apiMocks.updateProjectCalendar.mockResolvedValue({ calendar, project: { ...project, version: 2 } });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const timezone = screen.getByLabelText("Calendar timezone");
+    await user.clear(timezone); await user.type(timezone, "Asia/Kolkata");
+    await user.click(screen.getByRole("button", { name: "Save calendar" }));
+    await waitFor(() => expect(apiMocks.updateProjectCalendar).toHaveBeenCalledWith(100, expect.objectContaining({ version: 1, timezone: "Asia/Kolkata" })));
+  });
+
+  it("keeps viewer planning controls read-only", async () => {
     apiMocks.listOrganizations.mockResolvedValue([viewer]);
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await user.click(await screen.findByRole("button", { name: /Alpha/ }));
+    expect(screen.getByLabelText("Task name")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save task" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add dependency" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add task" })).not.toBeInTheDocument();
+  });
 
-    render(<WorkspacePage />);
-    await screen.findByRole("heading", { name: "Demo Project" });
+  it("allows editing when summary loading fails", async () => {
+    apiMocks.getProjectSummary.mockRejectedValue(new Error("Offline"));
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await user.click(await screen.findByRole("button", { name: /Alpha/ }));
+    expect(screen.getByRole("button", { name: "Save task" })).toBeEnabled();
+  });
 
-    expect(await screen.findByDisplayValue("Alpha")).toBeDisabled();
-    expect(
-      screen.queryByRole("button", { name: "Create project" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Create workspace" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Add member" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Add task" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Delete project" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Save calendar" }),
-    ).not.toBeInTheDocument();
+  it("resets the view and selection when changing projects", async () => {
+    apiMocks.listProjects.mockResolvedValue([project, secondProject]);
+    apiMocks.getProject.mockImplementation((id) => Promise.resolve(id === 100 ? project : secondProject));
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await screen.findByRole("button", { name: /Alpha/ });
+    await user.click(screen.getByRole("button", { name: "Timeline" }));
+    await user.click(screen.getByRole("button", { name: "Second Project" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Tasks" })).toHaveAttribute("aria-current", "page"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(apiMocks.getProjectSummary).toHaveBeenLastCalledWith(101));
+  });
+
+  it("closes the detail dialog on Escape and restores focus", async () => {
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    const trigger = await screen.findByRole("button", { name: /Alpha/ });
+    await user.click(trigger);
+    fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("confirms the task name before deletion", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const user = userEvent.setup(); render(<WorkspacePage />);
+    await user.click(await screen.findByRole("button", { name: /Alpha/ }));
+    await user.click(screen.getByRole("button", { name: "Delete task" }));
+    expect(confirm).toHaveBeenCalledWith('Delete "Alpha"?');
+    expect(apiMocks.deleteTask).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await user.click(screen.getByRole("button", { name: "Delete task" }));
+    await waitFor(() => expect(apiMocks.deleteTask).toHaveBeenCalledWith(100, 1));
+    confirm.mockRestore();
   });
 
   it("shows API failures as an alert", async () => {
-    apiMocks.listOrganizations.mockRejectedValue(
-      new ApiError(500, "internal_error", "Could not load organizations."),
-    );
-
+    apiMocks.listOrganizations.mockRejectedValue(new ApiError(503, "offline", "Unavailable"));
     render(<WorkspacePage />);
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Could not load organizations.",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unavailable");
   });
 });

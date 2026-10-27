@@ -5,7 +5,6 @@ from app.api.validation import json_body, optional_int_arg, pagination_args
 from app.errors import ApiError
 from app.extensions import db
 from app.models.planning import Task
-from app.services.collaboration import notify_project_members
 from app.services.planning import (
     create_task,
     delete_task,
@@ -49,13 +48,6 @@ def post_task(project_id):
     )
     data = json_body()
     task = create_task(project, data)
-    notify_project_members(
-        project,
-        current_user.id,
-        "task_created",
-        f"{current_user.display_name} added task '{task.name}' to {project.name}.",
-        task_id=task.id,
-    )
     return jsonify(
         task=task.to_dict(),
         project_version=project.version,

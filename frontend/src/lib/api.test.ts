@@ -496,3 +496,25 @@ describe("tenancy and planning endpoints", () => {
     expect(header(calls[0].init, "X-CSRFToken")).toBeNull();
   });
 });
+
+describe("project summary", () => {
+  it("loads insights using a read-only authenticated request", async () => {
+    const summary = { project_version: 2, task_count: 0, completed_task_count: 0, completion_percent: 0, status_counts: { not_started: 0, in_progress: 0, blocked: 0, completed: 0 }, duration_stats: null };
+    const { calls } = installFetch(() => jsonResponse({ summary }));
+    const { getProjectSummary } = await loadApi();
+    await expect(getProjectSummary(12)).resolves.toEqual(summary);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("/api/v1/projects/12/summary");
+    expect(calls[0].init.credentials).toBe("same-origin");
+    expect(header(calls[0].init, "X-CSRFToken")).toBeNull();
+  });
+});
+
+it("loads all task pages so the list matches the project summary", async () => {
+  const { calls } = installFetch((url) => jsonResponse({
+    tasks: url.includes("offset=2") ? [{ id: 3 }] : [{ id: 1 }, { id: 2 }], limit: 2,
+  }));
+  const { listTasks } = await loadApi();
+  await expect(listTasks(12)).resolves.toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  expect(calls.map((call) => call.url)).toEqual(["/api/v1/projects/12/tasks", "/api/v1/projects/12/tasks?offset=2"]);
+});

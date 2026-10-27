@@ -106,3 +106,12 @@ def patch_project_calendar(project_id):
         calendar=calendar.to_dict(),
         project=project.to_dict(role=membership.role),
     )
+
+
+@projects_api.get("/projects/<int:project_id>/summary")
+@login_required
+def get_project_summary(project_id):
+    from app.services.summary import project_summary
+
+    project, _membership = require_project_membership(project_id, current_user.id)
+    return jsonify(summary=project_summary(project))
