@@ -8,7 +8,7 @@ The app combines a React + TypeScript frontend, a Flask JSON API, and a SQLite d
 
 - Organizations, users, roles, workspaces, and shared projects.
 - Task and milestone management with dependencies and calendars.
-- Interactive Gantt planning and dependency-aware schedule recalculation.
+- Read-only Gantt visualization and dependency-aware schedule recalculation.
 - Critical path, total float, and free float analysis.
 - Resource load and overload detection, plus an explainable leveling preview.
 - PERT/Monte Carlo deadline confidence estimates with reproducible seeds.
@@ -18,7 +18,7 @@ The detailed product scope, data model, rules, phases, and evaluation plan are i
 
 ## Current status
 
-Milestones M0 (platform foundation) and M1 (identity) are complete. The backend provides environment-based configuration, SQLAlchemy models with Alembic migrations, session/CSRF protection, a consistent JSON error envelope, request IDs, a database-aware health check, seeded demo accounts, and cookie-session login/logout/current-user endpoints. The frontend provides a sign-in screen and signed-in landing state. Tenancy, planning, scheduling, analytics, and export remain planned work; see the status section in [plan.md](plan.md).
+Milestones M0 (platform foundation), M1 (identity), M2 (organization/workspace access control), M3 (core project/task planning), M4 (calendar editing and CPM scheduling), and M5 (read-only Gantt visualization) are complete. The backend provides environment-based configuration, SQLAlchemy models with Alembic migrations, session/CSRF protection, a consistent JSON error envelope, request IDs, a database-aware health check, seeded demo accounts, cookie-session authentication, organization membership and role enforcement, workspace/project/task/dependency CRUD, deterministic demo seeding, editable project calendars, and an on-demand FS/SS/FF/SF schedule endpoint with constraints, float, and critical path. The frontend provides sign-in, a state-based planning workspace with role-aware organization, member, workspace, project, task, dependency, calendar, schedule, and Gantt controls. Resources/assignments, analytics, risk simulation, and export remain planned work; see the status section in [plan.md](plan.md).
 
 For a detailed implementation-status brief intended for report writing, including unimplemented modules and dormant code, see [docs/project-report-brief.md](docs/project-report-brief.md).
 
@@ -51,11 +51,11 @@ flask seed-demo
 flask run --debug
 ```
 
-`flask seed-demo` is idempotent. It creates three demo accounts and prints how many were created or skipped. The development defaults are:
+`flask seed-demo` is idempotent. It creates three demo accounts plus a demo organization, workspace, project, three tasks, and two finish-to-start dependencies. It prints how many users were created or skipped, then summarizes the demo tenant. The development defaults are:
 
-| Email | Role in later milestones |
+| Email | Role in the demo organization |
 | --- | --- |
-| `owner@demo.local` | organization owner |
+| `owner@demo.local` | owner |
 | `editor@demo.local` | editor |
 | `viewer@demo.local` | viewer |
 
@@ -119,13 +119,13 @@ npm run test:coverage
 npm run build
 ```
 
-CI runs both suites, applies migrations against a fresh database to catch model/migration drift, and runs `flask seed-demo` to exercise the demo-account command.
+CI runs both suites, applies migrations against a fresh database to catch model/migration drift, and runs `flask seed-demo` to exercise the idempotent demo tenant.
 
 ## Development notes
 
 - Keep scheduling and analytics logic independent of Flask request state.
 - Use SQLAlchemy transactions for related writes and check project versions for stale edits.
-- Enforce organization and workspace membership on every project read and mutation.
+- Enforce organization membership and role rules on every workspace, project, task, and dependency read or mutation.
 - Keep schedule inputs separate from derived dates.
 - Document any change to date, calendar, dependency, or simulation assumptions.
 - Build features in the order and acceptance criteria in `plan.md`.

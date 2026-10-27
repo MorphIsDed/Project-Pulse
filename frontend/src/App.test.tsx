@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   getMe: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
+  listOrganizations: vi.fn(),
 }));
 
 vi.mock("./lib/api", async (importOriginal) => {
@@ -19,6 +20,7 @@ vi.mock("./lib/api", async (importOriginal) => {
     getMe: apiMocks.getMe,
     login: apiMocks.login,
     logout: apiMocks.logout,
+    listOrganizations: apiMocks.listOrganizations,
   };
 });
 
@@ -46,6 +48,7 @@ beforeEach(() => {
   apiMocks.getMe.mockReset().mockResolvedValue(null);
   apiMocks.login.mockReset();
   apiMocks.logout.mockReset();
+  apiMocks.listOrganizations.mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -110,9 +113,9 @@ describe("initial load", () => {
     stubHealth(healthyResponse());
     render(<App />);
 
-    expect(await screen.findByText("Demo Owner.")).toBeInTheDocument();
+    expect(await screen.findByText("Demo Owner")).toBeInTheDocument();
     expect(
-      screen.getByText(/owner@example\.com/),
+      await screen.findByRole("heading", { name: "Organizations" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Sign out" }),
@@ -140,7 +143,7 @@ describe("login", () => {
     );
     await browser.click(screen.getByRole("button", { name: "Sign in" }));
 
-    expect(await screen.findByText("Demo Owner.")).toBeInTheDocument();
+    expect(await screen.findByText("Demo Owner")).toBeInTheDocument();
     expect(apiMocks.login).toHaveBeenCalledWith(
       "owner@demo.local",
       "CorrectHorse123!",
@@ -173,7 +176,7 @@ describe("login", () => {
     expect(
       screen.getByRole("button", { name: "Sign in" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Demo Owner.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Demo Owner")).not.toBeInTheDocument();
   });
 });
 
@@ -185,7 +188,7 @@ describe("logout", () => {
     stubHealth(healthyResponse());
     render(<App />);
 
-    await screen.findByText("Demo Owner.");
+    await screen.findByText("Demo Owner");
     await browser.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(
@@ -201,7 +204,7 @@ describe("logout", () => {
     stubHealth(healthyResponse());
     render(<App />);
 
-    await screen.findByText("Demo Owner.");
+    await screen.findByText("Demo Owner");
     await browser.click(screen.getByRole("button", { name: "Sign out" }));
 
     await waitFor(() =>
@@ -209,6 +212,6 @@ describe("logout", () => {
         screen.getByRole("button", { name: "Sign out" }),
       ).toBeEnabled(),
     );
-    expect(screen.getByText("Demo Owner.")).toBeInTheDocument();
+    expect(screen.getByText("Demo Owner")).toBeInTheDocument();
   });
 });

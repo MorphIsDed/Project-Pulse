@@ -318,3 +318,181 @@ describe("CSRF retry", () => {
     ).toBe(true);
   });
 });
+
+describe("tenancy and planning endpoints", () => {
+  it("loads organizations without a CSRF token", async () => {
+    const organization = {
+      id: 1,
+      name: "Demo Org",
+      role: "owner",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const { calls } = installFetch(() =>
+      jsonResponse({ organizations: [organization] }),
+    );
+    const { listOrganizations } = await loadApi();
+
+    await expect(listOrganizations()).resolves.toEqual([organization]);
+
+    expect(calls[0].url).toBe("/api/v1/organizations");
+    expect(calls[0].init.method).toBe("GET");
+    expect(header(calls[0].init, "X-CSRFToken")).toBeNull();
+  });
+
+  it("creates a task with a CSRF token and returns the project version", async () => {
+    const task = {
+      id: 8,
+      project_id: 5,
+      parent_task_id: null,
+      name: "Draft plan",
+      description: "",
+      status: "not_started",
+      duration_work_minutes: 120,
+      progress: 0,
+      priority: 3,
+      constraint_type: "none",
+      constraint_date: null,
+      estimate_optimistic: null,
+      estimate_most_likely: null,
+      estimate_pessimistic: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const { calls } = installFetch((url) => {
+      if (url.endsWith("/auth/csrf")) {
+        return jsonResponse({ csrf_token: "csrf-1" });
+      }
+      return jsonResponse({ task, project_version: 2 }, 201);
+    });
+    const { createTask } = await loadApi();
+
+    await expect(
+      createTask(5, { name: "Draft plan", duration_work_minutes: 120 }),
+    ).resolves.toEqual({ task, project_version: 2 });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/v1/auth/csrf",
+      "/api/v1/projects/5/tasks",
+    ]);
+    expect(calls[1].init.method).toBe("POST");
+    expect(header(calls[1].init, "X-CSRFToken")).toBe("csrf-1");
+    expect(requestBody(calls[1].init)).toEqual({
+      name: "Draft plan",
+      duration_work_minutes: 120,
+    });
+  });
+
+  it("sends the project version when updating a project", async () => {
+    const project = {
+      id: 5,
+      workspace_id: 2,
+      name: "Launch",
+      status: "active",
+      start_date: null,
+      target_finish: null,
+      version: 2,
+      calendar_id: 9,
+      created_by: 7,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const { calls } = installFetch((url) => {
+      if (url.endsWith("/auth/csrf")) {
+        return jsonResponse({ csrf_token: "csrf-1" });
+      }
+      return jsonResponse({ project });
+    });
+    const { updateProject } = await loadApi();
+
+    await updateProject(5, { version: 1, status: "completed" });
+
+    expect(calls[1].url).toBe("/api/v1/projects/5");
+    expect(calls[1].init.method).toBe("PATCH");
+    expect(requestBody(calls[1].init)).toEqual({
+      version: 1,
+      status: "completed",
+    });
+  });
+
+  it("loads a project schedule without a CSRF token", async () => {
+    const schedule = {
+      project_id: 5,
+      project_version: 2,
+      project_start: "2026-01-05",
+      requested_start: "2026-01-05",
+      start_source: "project",
+      target_finish: null,
+      project_finish: "2026-01-06",
+      project_finish_at: "2026-01-06T17:00+00:00",
+      calendar: { id: 9 },
+      tasks: [],
+      dependencies: [],
+      critical_path: [],
+      warnings: [],
+    };
+    const { calls } = installFetch(() => jsonResponse({ schedule }));
+    const { getProjectSchedule } = await loadApi();
+
+    await expect(getProjectSchedule(5)).resolves.toEqual(schedule);
+
+    expect(calls[0].url).toBe("/api/v1/projects/5/schedule");
+    expect(calls[0].init.method).toBe("GET");
+    expect(header(calls[0].init, "X-CSRFToken")).toBeNull();
+  });
+
+  it("patches the calendar with a CSRF token and project version", async () => {
+    const calendar = {
+      id: 9,
+      project_id: 5,
+      name: "Standard",
+      timezone: "UTC",
+      weekly_rules: { mon: [["09:00", "17:00"]] },
+      exceptions: [],
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const project = { id: 5, version: 3 };
+    const { calls } = installFetch((url) => {
+      if (url.endsWith("/auth/csrf")) {
+        return jsonResponse({ csrf_token: "csrf-1" });
+      }
+      return jsonResponse({ calendar, project });
+    });
+    const { updateProjectCalendar } = await loadApi();
+
+    await expect(
+      updateProjectCalendar(5, {
+        version: 2,
+        timezone: "UTC",
+        weekly_rules: { mon: [["09:00", "17:00"]] },
+      }),
+    ).resolves.toEqual({ calendar, project });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/v1/auth/csrf",
+      "/api/v1/projects/5/calendar",
+    ]);
+    expect(calls[1].init.method).toBe("PATCH");
+    expect(header(calls[1].init, "X-CSRFToken")).toBe("csrf-1");
+    expect(requestBody(calls[1].init)).toEqual({
+      version: 2,
+      timezone: "UTC",
+      weekly_rules: { mon: [["09:00", "17:00"]] },
+    });
+  });
+
+  it("adds task filters to the query string", async () => {
+    const { calls } = installFetch(() => jsonResponse({ tasks: [] }));
+    const { listTasks } = await loadApi();
+
+    await expect(
+      listTasks(5, { status: "blocked", parent_task_id: 3, limit: 10 }),
+    ).resolves.toEqual([]);
+
+    expect(calls[0].url).toBe(
+      "/api/v1/projects/5/tasks?status=blocked&parent_task_id=3&limit=10",
+    );
+    expect(header(calls[0].init, "X-CSRFToken")).toBeNull();
+  });
+});

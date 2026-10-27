@@ -8,7 +8,7 @@ from app.cli import register_cli
 from app.config import DEVELOPMENT_SECRET, get_config
 from app.errors import error_response, register_error_handlers
 from app.extensions import csrf, db, login_manager, migrate
-from app.models.user import User
+from app.models import User
 from app.request_context import register_request_context
 
 

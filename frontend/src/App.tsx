@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import LoginPage from "./pages/LoginPage";
+import WorkspacePage from "./pages/WorkspacePage";
 
 type Health = { status: string; service: string };
 type HealthState = "loading" | "online" | "offline";
@@ -47,9 +48,6 @@ function AppContent() {
     setSigningOut(false);
   }
 
-  const dotClass =
-    health === "online" ? "dot online" : health === "offline" ? "dot offline" : "dot";
-
   return (
     <main className="shell">
       <header className="topbar">
@@ -77,22 +75,7 @@ function AppContent() {
           <h1>One moment.</h1>
         </section>
       ) : user ? (
-        <section className="welcome">
-          <p className="eyebrow">SIGNED IN</p>
-          <h1>
-            Welcome back,
-            <br />
-            <em>{user.display_name}.</em>
-          </h1>
-          <p className="intro">
-            You are signed in as {user.email}. Organizations, workspaces, and
-            project plans arrive in the next milestone.
-          </p>
-          <div className="status">
-            <span className={dotClass} />
-            {healthText}
-          </div>
-        </section>
+        <WorkspacePage />
       ) : (
         <LoginPage health={health} status={healthText} />
       )}

@@ -10,7 +10,7 @@ The application will support multiple organizations, workspaces, projects, and u
 
 - Create and manage organizations, workspaces, projects, and project teams.
 - Create and organize tasks, milestones, dependencies, calendars, resources, and assignments.
-- Show plans in an interactive Gantt chart.
+- Show plans in a read-only Gantt chart with dependency-aware recalculation.
 - Recalculate schedules using working calendars and task dependencies.
 - Explain critical path and task float.
 - Identify when assigned resource demand exceeds resource capacity.
@@ -41,7 +41,7 @@ The application will support multiple organizations, workspaces, projects, and u
 
 1. Open an authorized workspace and project.
 2. Add tasks, milestones, estimates, dependencies, resources, and assignments.
-3. Review or adjust the schedule in the Gantt view.
+3. Review the schedule in the read-only Gantt view.
 4. Inspect critical tasks, float, and resource overloads.
 5. Preview leveling proposals and decide whether to apply them.
 6. Run deadline-risk analysis and inspect its assumptions and results.
@@ -71,16 +71,16 @@ Keep route handlers thin. Scheduling and analytics code should use ordinary Pyth
 - **User:** global identity with unique email and password hash.
 - **Organization membership:** a user’s role in an organization.
 - **Workspace:** belongs to an organization.
-- **Workspace membership:** optional finer-grained access within an organization; whether it is mandatory is an open policy decision.
-- **Project:** belongs to a workspace and has a status, calendar, version, dates, and creator.
+- **Workspace membership:** not used in the first release; organization membership is the access boundary.
+- **Project:** belongs to a workspace and has a status, editable calendar, version, dates, and creator.
 - **Task:** belongs to a project and may have a parent task; stores user inputs separately from calculated schedule fields.
 - **Dependency:** directed link between tasks, with FS, SS, FF, or SF type and working-time lag.
-- **Calendar:** project working intervals, timezone, holidays, and exceptions.
+- **Calendar:** project working intervals, timezone, holidays, and exceptions. A default is created with each project and is editable in M4.
 - **Resource and assignment:** project-scoped capacity plus task allocation.
 - **Analysis run:** kind, input project version, parameters, summary, creator, and timestamp for reproducibility.
 - **Audit event:** lightweight record of important changes.
 
-Use integer primary keys, foreign keys, membership-pair uniqueness, and ISO-formatted dates/timestamps. Store audit timestamps in UTC. Enable SQLite foreign-key enforcement for every database connection. Every project request must verify access through its organization and applicable workspace membership. Never rely on a browser-supplied ID as authorization.
+Use integer primary keys, foreign keys, membership-pair uniqueness, and ISO-formatted dates/timestamps. Store audit timestamps in UTC. Enable SQLite foreign-key enforcement for every database connection. Every project request must verify access through its workspace's organization membership and role. Never rely on a browser-supplied ID as authorization.
 
 ## 7. Scheduling and analysis rules
 
@@ -142,11 +142,11 @@ Implement registration/login/logout, organizations, memberships, workspaces, rol
 
 ### Phase 3 — Project and task management
 
-Implement project/task CRUD, task hierarchy, assignments, and dependency CRUD with validation. Acceptance: create/edit/delete flows work; invalid and cross-project links are rejected.
+Implement project/task CRUD, task hierarchy, default project calendars, and dependency CRUD with validation. Resources and assignments are deferred to Phase 5 so capacity data arrives with resource analysis. Acceptance: create/edit/delete flows work; invalid, self, duplicate, cross-project, and cyclic links are rejected; project versions detect stale edits.
 
 ### Phase 4 — Gantt and scheduling
 
-Implement the Gantt experience, calendars, four dependency types, lag, cycle detection, CPM, and float. Acceptance: hand-calculated cases produce expected dates, critical path, and float.
+Implement the Gantt experience, calendars, four dependency types, lag, cycle detection, CPM, and float. Acceptance: hand-calculated cases produce expected dates, critical path, and float. Calendar editing and CPM are implemented in M4; the custom read-only SVG Gantt is implemented in M5.
 
 ### Phase 5 — Resource analysis
 
@@ -179,12 +179,24 @@ Milestone M0 (platform foundation) is complete: Flask app factory, environment-b
 
 Milestone M1 (identity) is complete: a `users` model and migration, password hashing, normalized email validation, disabled-by-default registration, login/logout/current-user endpoints, CSRF token issuance, an idempotent `flask seed-demo` command with owner/editor/viewer demo accounts, authentication tests, and a React sign-in screen with session restore and sign-out. Frontend tests cover the API client, auth context, login page, and app auth/health flow with Vitest and React Testing Library.
 
-Organization/workspace access control (M2), project/task planning (M3), scheduling and Gantt (M4–M5), resource analytics (M6), risk simulation (M7), and ICS export (M8) remain to be implemented. Treat this plan as the target design; update this section as features are completed.
+Milestone M2 (organization/workspace access control) is complete: organization membership and role models, workspace tenancy, owner/admin/editor/viewer permissions, member management with a last-owner guard, organization/workspace/member APIs, demo tenancy, CSRF-protected mutations, and backend/frontend coverage. Organization membership is the only access boundary; workspace memberships are not used.
 
-## 12. Open decisions
+Milestone M3 (core planning) is complete: project, project calendar, task hierarchy, task constraints/PERT fields, and dependency models; project/task/dependency CRUD APIs; optimistic project versioning; self-link, duplicate, cross-project, hierarchy-cycle, and dependency-cycle validation; a seeded demo project; and a state-based React planning workspace.
 
-- Is organization membership sufficient for access, or must a user also have workspace membership?
-- Which roles exist, and which actions may each role perform?
-- Which task constraints are supported and are they hard or advisory?
-- Can each project choose its timezone and working hours in the first release?
-- Which Gantt interactions and library best fit the academic evaluation?
+Milestone M4 (calendar editing and CPM scheduling) is complete: timezone-aware working calendars, validation for weekly rules and date exceptions, calendar PATCH with version checks, an on-demand schedule endpoint, FS/SS/FF/SF dependency propagation with lag, all seven constraints, milestones, target-finish warnings, earliest/latest dates, total/free float, and critical path. The React workspace adds a basic calendar editor and schedule summary. Milestone M5 (Gantt visualization) is also complete: a custom read-only SVG timeline shows task bars, dependency links, milestones, critical-path emphasis, float bars, and weekend shading. Resources/assignments (M6), risk simulation (M7), ICS export (M8), and final evaluation remain planned.
+
+## 12. Resolved and open decisions
+
+Resolved for the first release:
+
+- Organization membership is sufficient for access; workspace membership is not used.
+- Roles are `owner`, `admin`, `editor`, and `viewer`, with permissions enforced by the API and reflected in the UI.
+- Supported task constraints are `none`, start/finish no-earlier/no-later, and must-start/must-finish; M4 enforces them during CPM calculation. Must-start/must-finish conflicts are hard errors.
+- Projects start with a UTC Monday-Friday 09:00-17:00 calendar; M4 supports editable timezones, working rules, and exceptions.
+- Schedules are computed on demand and not persisted; M7 analysis runs will snapshot their inputs.
+- The M5 Gantt uses a custom SVG timeline with no new charting dependency and is read-only in its first version.
+- Resources and assignments are deferred to M6 rather than M3.
+
+Still open:
+
+- Which additional Gantt interactions (drag/resize editing) fit the academic evaluation after the read-only M5 timeline?

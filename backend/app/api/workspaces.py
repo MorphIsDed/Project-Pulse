@@ -1,129 +1,81 @@
-import sqlite3
-from flask import Blueprint, jsonify, request, session
-from app import get_db
+from flask import Blueprint, jsonify
+from flask_login import current_user, login_required
 
-
-workspaces_api = Blueprint("workspaces_api", __name__)
-
-
-def get_membership(organization_id: int, user_id: int):
-    return get_db().execute(
-        """
-        SELECT role
-        FROM organization_memberships
-        WHERE organization_id = ? AND user_id = ?
-        """,
-        (organization_id, user_id),
-    ).fetchone()
-
-
-@workspaces_api.get(
-    "/api/v1/organizations/<int:organization_id>/workspaces"
+from app.api.validation import json_body, pagination_args, require_fields
+from app.services.tenancy import (
+    MANAGE_ROLES,
+    create_workspace,
+    delete_workspace,
+    list_workspaces,
+    rename_workspace,
+    require_organization_membership,
+    require_workspace_membership,
 )
-def list_workspaces(organization_id):
-    user_id = session.get("user_id")
 
-    if user_id is None:
-        return jsonify(
-            error={"code": "not_authenticated", "message": "Please log in."}
-        ), 401
+workspaces_api = Blueprint("workspaces_api", __name__, url_prefix="/api/v1")
 
-    if get_membership(organization_id, user_id) is None:
-        return jsonify(
-            error={"code": "not_found", "message": "Organization not found."}
-        ), 404
 
-    rows = get_db().execute(
-        """
-        SELECT id, organization_id, name, created_at
-        FROM workspaces
-        WHERE organization_id = ?
-        ORDER BY name
-        """,
-        (organization_id,),
-    ).fetchall()
-
+@workspaces_api.get("/organizations/<int:organization_id>/workspaces")
+@login_required
+def get_workspaces(organization_id):
+    membership = require_organization_membership(
+        organization_id, current_user.id
+    )
+    limit, offset = pagination_args()
+    workspaces = list_workspaces(
+        organization_id, membership.role, limit, offset
+    )
     return jsonify(
-        workspaces=[
-            {
-                "id": row["id"],
-                "organization_id": row["organization_id"],
-                "name": row["name"],
-                "created_at": row["created_at"],
-            }
-            for row in rows
-        ]
-    ), 200
+        workspaces=workspaces,
+        limit=limit,
+        offset=offset,
+    )
 
 
-@workspaces_api.post(
-    "/api/v1/organizations/<int:organization_id>/workspaces"
-)
-def create_workspace(organization_id):
-    user_id = session.get("user_id")
-
-    if user_id is None:
-        return jsonify(
-            error={"code": "not_authenticated", "message": "Please log in."}
-        ), 401
-
-    membership = get_membership(organization_id, user_id)
-
-    if membership is None:
-        return jsonify(
-            error={"code": "not_found", "message": "Organization not found."}
-        ), 404
-
-    if membership["role"] not in ("owner", "admin"):
-        return jsonify(
-            error={"code": "forbidden", "message": "Only owners and admins can create workspaces."}
-        ), 403
-
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return jsonify(
-            error={"code": "invalid_json", "message": "Send a JSON object."}
-        ), 400
-
-    name = data.get("name")
-
-    if not isinstance(name, str) or not name.strip():
-        return jsonify(
-            error={"code": "invalid_name", "message": "Workspace name is required."}
-        ), 400
-
-    name = name.strip()
-
-    if len(name) > 120:
-        return jsonify(
-            error={"code": "invalid_name", "message": "Name must be 120 characters or fewer."}
-        ), 400
-
-    db = get_db()
-
-    try:
-        cursor = db.execute(
-            """
-            INSERT INTO workspaces (organization_id, name)
-            VALUES (?, ?)
-            """,
-            (organization_id, name),
-        )
-        db.commit()
-    except sqlite3.IntegrityError:
-        db.rollback()
-        return jsonify(
-            error={
-                "code": "workspace_conflict",
-                "message": "A workspace with that name may already exist.",
-            }
-        ), 409
-
+@workspaces_api.post("/organizations/<int:organization_id>/workspaces")
+@login_required
+def post_workspace(organization_id):
+    membership = require_organization_membership(
+        organization_id, current_user.id, MANAGE_ROLES
+    )
+    data = json_body()
+    require_fields(data, "name")
+    workspace = create_workspace(organization_id, data["name"])
     return jsonify(
-        workspace={
-            "id": cursor.lastrowid,
-            "organization_id": organization_id,
-            "name": name,
-        }
+        workspace=workspace.to_dict(role=membership.role)
     ), 201
+
+
+@workspaces_api.get("/workspaces/<int:workspace_id>")
+@login_required
+def get_workspace(workspace_id):
+    workspace, membership = require_workspace_membership(
+        workspace_id, current_user.id
+    )
+    return jsonify(
+        workspace=workspace.to_dict(role=membership.role)
+    )
+
+
+@workspaces_api.patch("/workspaces/<int:workspace_id>")
+@login_required
+def patch_workspace(workspace_id):
+    workspace, membership = require_workspace_membership(
+        workspace_id, current_user.id, MANAGE_ROLES
+    )
+    data = json_body()
+    require_fields(data, "name")
+    workspace = rename_workspace(workspace, data["name"])
+    return jsonify(
+        workspace=workspace.to_dict(role=membership.role)
+    )
+
+
+@workspaces_api.delete("/workspaces/<int:workspace_id>")
+@login_required
+def delete_workspace_route(workspace_id):
+    workspace, _membership = require_workspace_membership(
+        workspace_id, current_user.id, MANAGE_ROLES
+    )
+    delete_workspace(workspace)
+    return "", 204
