@@ -26,7 +26,7 @@ The application will support multiple organizations, workspaces, projects, and u
 - Portfolio-level optimization or cross-project resource pooling.
 - Two-way calendar synchronization or OAuth calendar integrations.
 - Globally optimal resource-constrained scheduling.
-- Email notifications unless the core application is complete and time remains.
+- Real-time or chat-style notifications; collaboration email is limited to organization invitations.
 
 ## 4. Users and main workflows
 
@@ -183,7 +183,17 @@ Milestone M2 (organization/workspace access control) is complete: organization m
 
 Milestone M3 (core planning) is complete: project, project calendar, task hierarchy, task constraints/PERT fields, and dependency models; project/task/dependency CRUD APIs; optimistic project versioning; self-link, duplicate, cross-project, hierarchy-cycle, and dependency-cycle validation; a seeded demo project; and a state-based React planning workspace.
 
-Milestone M4 (calendar editing and CPM scheduling) is complete: timezone-aware working calendars, validation for weekly rules and date exceptions, calendar PATCH with version checks, an on-demand schedule endpoint, FS/SS/FF/SF dependency propagation with lag, all seven constraints, milestones, target-finish warnings, earliest/latest dates, total/free float, and critical path. The React workspace adds a basic calendar editor and schedule summary. Milestone M5 (Gantt visualization) is also complete: a custom read-only SVG timeline shows task bars, dependency links, milestones, critical-path emphasis, float bars, and weekend shading. Resources/assignments (M6), risk simulation (M7), ICS export (M8), and final evaluation remain planned.
+Milestone M4 (calendar editing and CPM scheduling) is complete: timezone-aware working calendars, validation for weekly rules and date exceptions, calendar PATCH with version checks, an on-demand schedule endpoint, FS/SS/FF/SF dependency propagation with lag, all seven constraints, milestones, target-finish warnings, earliest/latest dates, total/free float, and critical path. The React workspace adds a basic calendar editor and schedule summary. Milestone M5 (Gantt visualization) is complete: a custom read-only SVG timeline shows task bars, dependency links, milestones, critical-path emphasis, float bars, and weekend shading.
+
+Milestone M6 (resource analysis) is complete: project resources and task assignments, workload aggregation, overload detection with contributing tasks, and a heuristic leveling preview that can extend the project finish only within `target_finish`. The React workspace includes resource and workload controls.
+
+Milestone M7 (risk simulation) is complete: optional three-point PERT estimates, seeded beta-PERT Monte Carlo runs, deterministic fallback for tasks without valid estimates, finish percentiles, target-date hit probability, per-task critical frequency, and a risk panel. Runs are synchronous with 2,000 iterations by default and a 100-10,000 range.
+
+Milestone M8 (ICS export) is complete: an authenticated all-day VEVENT export with escaped text, CRLF line endings, and a project-named attachment. The workspace exposes an Export ICS action.
+
+Collaboration and account features are also implemented: admin-created invitation tokens with in-app acceptance, organization invitation and acceptance notifications, task-creation notifications for other organization members, notification read state, JSON account export, and password-confirmed account deletion with owner succession or organization cleanup.
+
+Milestone M9 evaluation assets are in place: the suite now covers 108 backend and 64 frontend tests, the full migration chain is verified, and `backend/scripts/benchmark.py` reproduces 1,000-task schedule and risk-simulation measurements documented in `docs/evaluation.md`. A small human user evaluation has not been conducted.
 
 ## 12. Resolved and open decisions
 
@@ -195,7 +205,9 @@ Resolved for the first release:
 - Projects start with a UTC Monday-Friday 09:00-17:00 calendar; M4 supports editable timezones, working rules, and exceptions.
 - Schedules are computed on demand and not persisted; M7 analysis runs will snapshot their inputs.
 - The M5 Gantt uses a custom SVG timeline with no new charting dependency and is read-only in its first version.
-- Resources and assignments are deferred to M6 rather than M3.
+- Resources and assignments are project-scoped and drive an explainable heuristic leveling preview, not an optimal solver.
+- Risk simulation is synchronous and reproducible from a seed; tasks without a complete ordered estimate range stay deterministic.
+- Collaboration uses invitation tokens and in-app notifications rather than live co-editing or email verification.
 
 Still open:
 

@@ -21,13 +21,13 @@ SQLite is appropriate for local academic deployment and modest concurrent use. U
 
 ## Initial module boundaries
 
-- `backend/app/api`: thin versioned route handlers for auth, health, organizations, workspaces, projects, tasks, and dependencies.
-- `backend/app/models`: SQLAlchemy persistence mappings for identity, tenancy, and planning.
-- `backend/app/services`: identity, tenancy/authorization, planning operations, and demo seeding.
+- `backend/app/api`: thin versioned route handlers for auth, health, organizations, workspaces, projects, tasks, dependencies, resources, schedules, risk, exports, collaboration, and accounts.
+- `backend/app/models`: SQLAlchemy persistence mappings for identity, tenancy, planning, resources, and collaboration.
+- `backend/app/services`: identity, tenancy/authorization, planning, resources, risk, export, collaboration, account, and demo-seeding services.
 - `backend/app/scheduling`: implemented graph validation, timezone-aware calendar arithmetic, constraint handling, and CPM.
-- `backend/app/analytics`: planned resource load, leveling preview, and risk simulation; the old prototype route file remains dormant.
-- `frontend/src`: auth, state-based planning workspace, schedule summary, calendar editor, read-only SVG Gantt, API client, and tests; resources/analytics are future work.
-- `docs`: architecture, API contract, scheduling assumptions, and user guide.
+- `backend/app/api/analytics.py`: an old prototype route file that is not registered; active analytics live in services and the versioned blueprints.
+- `frontend/src`: auth, state-based planning workspace, schedule summary, calendar editor, read-only SVG Gantt, resource/risk/collaboration/account panels, API client, and tests.
+- `docs`: architecture, API contract, scheduling assumptions, deployment, evaluation evidence, and report notes.
 
 ## Tenant access
 
@@ -39,7 +39,7 @@ Persistence uses Flask-SQLAlchemy models, with Flask-Migrate/Alembic as the only
 
 Use integer primary keys, foreign keys, unique membership pairs, and ISO 8601 dates/timestamps. Store audit timestamps in UTC. Enable SQLite foreign-key enforcement on every connection. Store schedule inputs separately from calculated dates. Store a project version and require expected-version checks for edits that can affect a schedule. Save analysis kind, input project version, parameters, summary, creator, and timestamp for reproducibility.
 
-The implemented data model includes users, organizations, organization memberships, workspaces, projects, project calendars, tasks, and dependencies. Resources, assignments, analysis runs, and audit events remain target-model entities for later milestones. Each project receives one default UTC calendar with Monday-Friday 09:00-17:00 weekly rules and an exceptions list. M4 exposes calendar editing and computes CPM schedules on demand; derived schedule dates are not stored. Cross-project resource pooling is out of scope.
+The implemented data model includes users, organizations, organization memberships, workspaces, projects, project calendars, tasks, dependencies, resources, assignments, notifications, and workspace invitations. Analysis runs and audit events remain target-model entities; risk simulations are computed on demand and are not saved. Each project receives one default UTC calendar with Monday-Friday 09:00-17:00 weekly rules and an exceptions list. Calendar editing is exposed through the API and workspace. CPM schedules, workloads, leveling previews, and risk simulations are computed on demand; derived schedule dates are not stored. Cross-project resource pooling is out of scope.
 
 ## API conventions
 
@@ -53,9 +53,9 @@ Expose JSON under `/api/v1`. Use consistent errors with stable machine-readable 
 4. Add project/task/dependency CRUD and default calendars. Done (M3).
 5. Add calendar editing, calendar-aware CPM scheduling, critical path, and float. Done (M4).
 6. Add a custom SVG Gantt timeline and read-only schedule visualization. Done (M5).
-7. Add resource analysis, then risk simulation. Planned (M6-M7).
-8. Add ICS export and polish. Planned (M8).
-9. Evaluate scenarios and performance near 1,000 tasks; document measured limits. Planned.
+7. Add resource analysis, then risk simulation. Done (M6-M7).
+8. Add ICS export, collaboration, account tools, and polish. Done (M8).
+9. Evaluate scenarios and performance near 1,000 tasks; document measured limits. Done for automated tests and benchmarks (M9); a human user evaluation is still pending.
 
 ## Boundaries
 

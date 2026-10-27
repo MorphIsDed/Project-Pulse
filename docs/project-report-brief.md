@@ -4,11 +4,11 @@ This document is a source pack for writing a detailed academic report about Proj
 
 - Repository: <https://github.com/MorphIsDed/Project-Pulse>
 - Branch: `main`
-- Last committed baseline: `c64c16f`; M2/M3/M4/M5 changes were verified in the working tree and are pending commit.
+- Last committed baseline: see `git log -1`; M6-M9, collaboration, and documentation are committed after the M0-M5 baseline.
 - Snapshot date: 2026-10-27
 - Purpose: implementation evidence, architecture notes, test evidence, limitations, and a suggested report structure.
 
-> **Most important caution:** M2 (tenancy/access control), M3 (core planning), M4 (calendar editing and CPM scheduling), and M5 (read-only Gantt visualization) are implemented and active. The only remaining dormant prototype is `backend/app/api/analytics.py`, which still targets the earlier raw-SQLite schema and is not registered. Do not describe resource analytics/leveling, risk simulation, or ICS export as implemented. See [Dormant and unintegrated code](#10-dormant-and-unintegrated-code).
+> **Most important caution:** M0-M8 are implemented and active, including resources/leveling, seeded risk simulation, ICS export, invitations, notifications, and account tools. `backend/app/api/analytics.py` is an old unregistered prototype and should not be counted as active code. Automated evaluation and benchmarks are documented in [evaluation.md](evaluation.md); a human user evaluation was not conducted. See [Dormant and unintegrated code](#10-dormant-and-unintegrated-code).
 
 ---
 
@@ -44,10 +44,13 @@ At the snapshot date, the project has completed:
 - **M3 - Core planning:** projects, default project calendars, task hierarchy, task constraints/PERT inputs, dependencies, CRUD APIs, optimistic project versioning, graph validation, and a state-based React planning workspace.
 - **M4 - Calendar editing and CPM scheduling:** timezone-aware working calendars, weekly rules and exception validation, calendar PATCH, on-demand FS/SS/FF/SF scheduling with lag, all seven constraints, target-finish warnings, earliest/latest dates, total/free float, critical path, schedule API, basic calendar editor, and schedule summary.
 - **M5 - Gantt visualization:** custom read-only SVG timeline with task bars, dependency links, milestones, critical-path emphasis, float bars, weekend shading, and a schedule legend.
+- **M6 - Resource analysis:** project resources, task assignments, workload aggregation, overload detection, and a heuristic leveling preview bounded by `target_finish`.
+- **M7 - Risk simulation:** seeded beta-PERT Monte Carlo, deterministic fallback, finish percentiles, target probability, critical frequency, and a risk panel.
+- **M8 - ICS export:** authenticated all-day VEVENT export with escaped text and project-named attachments.
+- **Collaboration and accounts:** invitation tokens, in-app invitation/task notifications, read state, JSON account export, and password-confirmed account deletion.
+- **M9 - Evaluation:** 108 backend tests, 64 frontend tests, full migration-cycle verification, a reproducible benchmark, and documented scenarios and limitations. A human user evaluation was not conducted.
 
-The project has **not** completed resource analytics/leveling, risk simulation, ICS export, or the final evaluation.
-
-Only `backend/app/api/analytics.py` remains a dormant artifact from the earlier prototype. The old organization/workspace/project/task route files were replaced by active M2/M3 implementations, and the active scheduling package is separate from that dormant route file.
+`backend/app/api/analytics.py` remains a dormant artifact from the earlier prototype. The active organization/workspace/project/task/resource routes and services are separate from that file.
 
 ---
 
@@ -72,17 +75,18 @@ Only `backend/app/api/analytics.py` remains a dormant artifact from the earlier 
 | `backend/app/extensions.py` | SQLAlchemy, Migrate, LoginManager, CSRF, and SQLite pragmas. |
 | `backend/app/errors.py` | Consistent JSON error envelope and exception handlers. |
 | `backend/app/request_context.py` | Request IDs, timing, and access logging. |
-| `backend/app/api/` | Active auth, health, organization, workspace, project, task, and dependency blueprints. |
-| `backend/app/models/` | Active user, tenancy, and planning models. |
-| `backend/app/services/` | Identity, tenancy/authorization, planning, and demo-seeding services. |
-| `backend/migrations/` | Alembic baseline plus users, tenancy, and planning revisions. |
-| `backend/tests/` | Backend test suite covering M0-M4 and seed/demo behavior. |
-| `frontend/src/` | React app, auth context, API client, planning workspace, calendar editor, schedule summary, and tests. |
-| `docs/` | Architecture, API conventions, scheduling assumptions, deployment notes, and this brief. |
+| `backend/app/api/` | Active auth, health, tenancy, planning, resource, schedule, risk, export, collaboration, and account blueprints. |
+| `backend/app/models/` | Active user, tenancy, planning, resource, and collaboration models. |
+| `backend/app/services/` | Identity, tenancy/authorization, planning, scheduling, resource, risk, export, collaboration, account, and demo-seeding services. |
+| `backend/scripts/benchmark.py` | Reproducible 1,000-task schedule and risk-simulation benchmark. |
+| `backend/migrations/` | Alembic baseline plus users, tenancy, planning, resources, and collaboration revisions. |
+| `backend/tests/` | Backend test suite covering M0-M8 and seed/demo behavior. |
+| `frontend/src/` | React app, auth context, API client, planning workspace, Gantt, resource/risk/collaboration/account panels, and tests. |
+| `docs/` | Architecture, API conventions, scheduling assumptions, deployment, evaluation, and this brief. |
 | `.github/workflows/ci.yml` | Backend and frontend CI jobs. |
 
 
-> `backend/Dockerfile` and `docs/deployment.md` are present but describe the older raw-SQLite prototype. They are not consistent with the current M1-M4 architecture. See [Known limitations and inconsistencies](#13-known-limitations-and-inconsistencies).
+> `backend/Dockerfile` and `docs/deployment.md` describe the current Flask/SQLite/Alembic deployment path. A production deployment, backup drill, and restore drill have not been performed.
 
 ---
 
@@ -117,7 +121,7 @@ The initial performance target is approximately **1,000 tasks in one project**. 
 - Portfolio-level optimization or cross-project resource pooling.
 - Two-way calendar synchronization or OAuth calendar integrations.
 - Globally optimal resource-constrained scheduling.
-- Email notifications unless the core application is complete and time remains.
+- Real-time chat or live editing. Email is limited to organization invitations.
 
 The full product plan is in [plan.md](../plan.md).
 
@@ -133,13 +137,14 @@ The full product plan is in [plan.md](../plan.md).
 | M3 - Core project/task planning | Implemented | Projects, default calendars, task hierarchy/constraints/PERT fields, dependencies, versioning, validation, APIs, and planning UI. |
 | M4 - Calendar editing and CPM scheduling | Implemented | Editable timezone-aware calendars, schedule API, FS/SS/FF/SF propagation, constraints, float, critical path, and basic schedule UI. |
 | M5 - Gantt visualization | Implemented | Custom read-only SVG timeline with bars, dependency links, milestones, critical-path emphasis, float bars, and weekend shading. |
-| M6 - Resource analytics | Not implemented | No active resource/assignment models, load profiles, overload detection, or leveling preview. |
-| M7 - Risk simulation | Not implemented | No PERT simulation, saved runs, or confidence results. |
-| M8 - ICS export | Not implemented | No calendar export endpoint or UI. |
-| Phase 8 - Evaluation and final report | Not started/ongoing | No benchmark dataset, performance results, or user-evaluation record in the repository. |
+| M6 - Resource analytics | Implemented | Project resources/assignments, workload and overloads, heuristic leveling preview, and React panel. |
+| M7 - Risk simulation | Implemented | Seeded beta-PERT Monte Carlo with deterministic fallback, percentiles, target probability, critical frequency, and React panel. |
+| M8 - ICS export | Implemented | Authenticated all-day VEVENT export with escaping and a workspace action. |
+| Collaboration and accounts | Implemented | Invitations, notifications, account export, and account deletion. |
+| Phase 8 - Evaluation and final report | Partly complete | Automated tests, migration cycle, benchmark, scenarios, and limitations are documented; no human user evaluation. |
 
 
-![Implementation status](https://img.shields.io/badge/status-M0%20to%20M5%20implemented-2f6f5e)
+![Implementation status](https://img.shields.io/badge/status-M0%20to%20M8%20implemented-2f6f5e)
 
 ---
 
@@ -168,15 +173,15 @@ The active backend is a Flask application factory. `create_app()` in `backend/ap
 - **App factory:** `create_app(config_name=None, overrides=None)` in `backend/app/__init__.py`.
 - **Configuration:** `backend/app/config.py` loads root `.env` and `backend/.env`, selects development/testing/production configuration, and provides an environment-variable boolean helper.
 - **Extensions:** `backend/app/extensions.py` initializes SQLAlchemy with a naming convention, Flask-Migrate with batch mode, Flask-Login, and Flask-WTF CSRF. SQLite foreign keys and a busy timeout are enabled per connection.
-- **Blueprints:** `backend/app/api/__init__.py` registers auth, health, organizations, workspaces, projects, tasks, dependencies, and schedules. `analytics.py` remains unregistered.
+- **Blueprints:** `backend/app/api/__init__.py` registers auth, health, organizations, workspaces, projects, tasks, dependencies, resources, schedules, risk, exports, collaboration, and accounts. `analytics.py` remains unregistered.
 - **Error handling:** `backend/app/errors.py` converts API errors, CSRF errors, HTTP errors, and unexpected exceptions into one JSON envelope.
 - **Request correlation:** `backend/app/request_context.py` assigns or echoes `X-Request-ID`, measures duration, and logs method/path/status/duration/request ID.
 - **Health check:** `backend/app/api/health.py` executes `SELECT 1` and returns 200 or 503.
 - **CLI:** `backend/app/cli.py` registers `flask seed-demo`, which calls the demo service.
-- **Database:** `backend/app/models/` contains `User`, organization/membership/workspace, and project/calendar/task/dependency models. Migrations include `6f1a2b3c4d5e_add_tenancy.py` and `7a2b3c4d5e6f_add_planning.py`.
-- **Services:** `identity.py`, `tenancy.py`, `planning.py`, `scheduling.py`, and `demo.py` hold validation, authorization, CRUD, versioning, graph checks, CPM coordination, and idempotent seeding.
+- **Database:** `backend/app/models/` contains `User`, organization/membership/workspace, project/calendar/task/dependency/resource/assignment, notification, and invitation models. Migrations include tenancy, planning, resources, and collaboration revisions; the current head is `9c3d5e7f8a9b`.
+- **Services:** `identity.py`, `tenancy.py`, `planning.py`, `scheduling.py`, `resources.py`, `risk.py`, `export.py`, `collaboration.py`, `account.py`, and `demo.py` hold validation, authorization, CRUD, versioning, graph checks, CPM coordination, analytics, export, collaboration, account lifecycle, and idempotent seeding.
 - **Scheduling:** `backend/app/scheduling/calendar.py` implements timezone-aware working-time arithmetic; `cpm.py` implements dependency propagation, constraints, floats, and critical path; `graph.py` handles topology/cycle checks.
-- **Frontend:** `frontend/src/App.tsx` controls session restore, health display, login, and sign-out. `frontend/src/pages/WorkspacePage.tsx` renders the state-based planning workspace, calendar editor, and schedule summary; `frontend/src/lib/api.ts` owns CSRF handling and API calls. Login remains in `frontend/src/pages/LoginPage.tsx`.
+- **Frontend:** `frontend/src/App.tsx` controls session restore, health display, login, and sign-out. `frontend/src/pages/WorkspacePage.tsx` renders the state-based planning workspace, calendar editor, schedule summary, Gantt, resource, risk, invitation, notification, and account panels; `frontend/src/lib/api.ts` owns CSRF handling and API calls.
 
 ### 6.3 Security and API conventions
 
@@ -376,6 +381,13 @@ Active routes under `/api/v1`:
 - `GET/PATCH/DELETE /projects/<id>`; `GET/PATCH /projects/<id>/calendar`; `GET /projects/<id>/schedule`
 - `GET/POST /projects/<id>/tasks`; `GET/PATCH/DELETE /projects/<id>/tasks/<task_id>`
 - `GET/POST /projects/<id>/dependencies`; `DELETE /projects/<id>/dependencies/<dependency_id>`
+- `GET/POST /projects/<id>/resources`; `PATCH/DELETE /projects/<id>/resources/<resource_id>`
+- `GET/POST /projects/<id>/assignments`; `PATCH/DELETE /projects/<id>/assignments/<assignment_id>`
+- `GET /projects/<id>/workload`; `POST /projects/<id>/leveling-preview`
+- `POST /projects/<id>/risk-simulation`; `GET /projects/<id>/export.ics`
+- `GET /notifications`; `PATCH /notifications/<id>`; `POST /notifications/read-all`
+- `GET/POST /organizations/<id>/invitations`; `DELETE /organizations/<id>/invitations/<invitation_id>`; `POST /invitations/accept`
+- `GET /account/export`; `DELETE /account`
 
 All routes except health require authentication. Every tenancy/planning route requires organization membership; mutations apply the role rules documented in [docs/api-conventions.md](api-conventions.md). List routes accept `limit` and `offset`.
 
@@ -462,6 +474,39 @@ erDiagram
         datetime created_at
         datetime updated_at
     }
+    RESOURCES {
+        int id PK
+        int project_id FK
+        string name
+        string role
+        int capacity_work_minutes_per_day
+    }
+    ASSIGNMENTS {
+        int id PK
+        int project_id FK
+        int resource_id FK
+        int task_id FK
+        int allocation_percent
+    }
+    NOTIFICATIONS {
+        int id PK
+        int user_id FK
+        int organization_id FK
+        int project_id FK
+        int task_id FK
+        string kind
+        string message
+        datetime read_at
+    }
+    WORKSPACE_INVITATIONS {
+        int id PK
+        int organization_id FK
+        string email
+        string role
+        string token_hash
+        datetime expires_at
+        datetime accepted_at
+    }
 
     USERS ||--o{ ORGANIZATION_MEMBERSHIPS : joins
     ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERSHIPS : has
@@ -473,9 +518,15 @@ erDiagram
     TASKS ||--o{ TASKS : parent
     TASKS ||--o{ DEPENDENCIES : predecessor
     TASKS ||--o{ DEPENDENCIES : successor
+    PROJECTS ||--o{ RESOURCES : contains
+    PROJECTS ||--o{ ASSIGNMENTS : contains
+    RESOURCES ||--o{ ASSIGNMENTS : allocated
+    TASKS ||--o{ ASSIGNMENTS : receives
+    USERS ||--o{ NOTIFICATIONS : receives
+    ORGANIZATIONS ||--o{ WORKSPACE_INVITATIONS : issues
 ```
 
-There are no workspace membership records. Organization membership is the only tenant boundary. Resources, assignments, analysis runs, and audit events are not implemented.
+There are no workspace membership records. Organization membership is the only tenant boundary. Analysis runs and audit events are not implemented; risk simulations are computed on demand and return their inputs.
 
 ---
 
@@ -491,11 +542,9 @@ The old `organizations.py`, `workspaces.py`, `projects.py`, and `tasks.py` proto
 
 Use this language in the report:
 
-> The planning, tenancy, and CPM scheduling modules are active and tested. An older analytics prototype remains in the repository but is not registered, migrated, or tested, so resource load, leveling, risk simulation, and workload analytics are not implemented.
+> The planning, tenancy, CPM, resource, risk, export, and collaboration modules are active and tested. An older analytics prototype remains in the repository but is not registered, migrated, or tested, so it should not be used as evidence of a different analytics implementation.
 
-Do not claim that resource analysis, leveling, risk simulation, or ICS export are working. Read-only Gantt visualization is active in M5.
-
-`backend/Dockerfile` and `docs/deployment.md` still describe the earlier raw-SQLite prototype and are not consistent with the current Flask-Migrate configuration.
+Resource analysis, leveling, risk simulation, ICS export, and read-only Gantt visualization are active. `backend/Dockerfile` and `docs/deployment.md` describe the current Flask-Migrate/SQLite deployment path; no production deployment or restore drill has been recorded.
 
 ## 11. Implemented and future data model
 
@@ -510,9 +559,11 @@ Do not claim that resource analysis, leveling, risk simulation, or ICS export ar
 | `project_calendars` | One calendar per project with JSON weekly rules and exceptions. | Implemented; editable in M4. |
 | `tasks` | Project work item with hierarchy, status, duration, progress, priority, constraints, and PERT estimates. | Implemented. |
 | `dependencies` | Directed task link with FS/SS/FF/SF type and working-minute lag. | Implemented. |
-| `resources` | Project-scoped capacity. | Not implemented. |
-| `assignments` | Resource allocation to tasks. | Not implemented. |
-| `analysis_runs` | Reproducible record of analytics/simulation inputs and results. | Not implemented. |
+| `resources` | Project-scoped capacity. | Implemented in M6. |
+| `assignments` | Resource allocation to tasks. | Implemented in M6. |
+| `notifications` | Per-user in-app notification with read state. | Implemented with collaboration. |
+| `workspace_invitations` | Hashed, expiring organization invitation. | Implemented with collaboration. |
+| `analysis_runs` | Reproducible record of analytics/simulation inputs and results. | Not implemented; simulations are on demand. |
 | `audit_events` | Lightweight record of important changes. | Not implemented. |
 
 Implemented conventions:
@@ -592,7 +643,7 @@ M3 deliberately excluded calendar editing, schedule calculation, Gantt display, 
 - Proposals respect dependencies when feasible.
 - The preview is presented as a heuristic, not an optimal solver.
 
-**Current state:** not implemented. Dormant analytics routes exist for resources/workload/assignments; they are not active.
+**Current state:** implemented. `backend/app/models/planning.py` defines resources and assignments; `backend/app/services/resources.py` provides CRUD, workload aggregation, overloads, and a leveling preview; `backend/app/api/resources.py` exposes the endpoints. The preview may extend the project finish only while staying within `target_finish`. `frontend/src/components/ResourceWorkloadPanel.tsx` provides the UI. Tests are in `backend/tests/test_resources.py` and `frontend/src/components/ResourceWorkloadPanel.test.tsx`.
 
 ### 12.4 M7 — Risk simulation
 
@@ -611,7 +662,7 @@ M3 deliberately excluded calendar editing, schedule calculation, Gantt display, 
 - Deterministic tasks produce deterministic dates.
 - Results expose assumptions and are labelled as planning estimates, not guarantees.
 
-**Current state:** not implemented. No simulation code, saved-run model, or UI exists.
+**Current state:** implemented. `backend/app/services/risk.py` performs seeded beta-PERT Monte Carlo synchronously (default 2,000 iterations, range 100-10,000), with deterministic fallback for missing or unordered estimates. `POST /projects/<id>/risk-simulation` is exposed by `backend/app/api/risk.py`; `frontend/src/components/RiskSimulationPanel.tsx` displays percentiles, target probability, and critical frequency. Saved analysis runs are not implemented; the response carries the seed and assumptions for reproducibility. Tests are in `backend/tests/test_risk.py` and `frontend/src/components/RiskSimulationPanel.test.tsx`.
 
 ### 12.5 M8 — ICS export
 
@@ -628,9 +679,15 @@ M3 deliberately excluded calendar editing, schedule calculation, Gantt display, 
 - Dates and event boundaries match the displayed schedule.
 - Access control is enforced on export.
 
-**Current state:** not implemented. `icalendar` is listed in `requirements.txt`, but no active export code exists.
+**Current state:** implemented. `backend/app/services/export.py` builds all-day VEVENTs with CRLF line endings and escaped text; `GET /projects/<id>/export.ics` in `backend/app/api/exports.py` enforces project access and sets a project-named attachment. The workspace exposes an Export ICS link. Tests are in `backend/tests/test_export.py`. Import into a desktop calendar application was not recorded.
 
-### 12.6 Phase 8 — Evaluation and final report
+### 12.6 Collaboration and account tools
+
+**Goal:** let administrators bring members in and give users visibility and control over their data.
+
+**Current state:** implemented. Admin/owner users create expiring invitation tokens; the token is hashed at rest and acceptance is restricted to the invited email address. Development responses include the token, while production relies on SMTP configuration. Notifications record invitation acceptance and task creation for other organization members; users can mark one or all as read. `GET /account/export` returns the user's organizations, projects, tasks, dependencies, resources, assignments, and notifications. `DELETE /account` requires the password, transfers owner roles or deletes a sole-member organization, and clears the user's notifications. Tests are in `backend/tests/test_collaboration.py`; UI tests cover invitations, notifications, and account controls.
+
+### 12.7 Phase 8 — Evaluation and final report
 
 **Goal:** produce measured evidence and an academic evaluation.
 
@@ -641,7 +698,7 @@ M3 deliberately excluded calendar editing, schedule calculation, Gantt display, 
 - Small user evaluation of creating a plan, adding dependencies, finding critical work, resolving overload, and interpreting deadline confidence.
 - Documented limitations, assumptions, and measured results.
 
-**Current state:** not started in the repository. The existing tests cover M0-M5; there is no benchmark dataset, performance result, or user evaluation.
+**Current state:** automated evaluation is documented in [evaluation.md](evaluation.md). The suite covers M0-M8, the full migration chain was verified up/down/up, and `backend/scripts/benchmark.py` records 1,000-task schedule and risk timings. A small human user evaluation has not been conducted, and the benchmark is synthetic.
 
 ---
 
@@ -649,23 +706,24 @@ M3 deliberately excluded calendar editing, schedule calculation, Gantt display, 
 
 ### 13.1 Accuracy cautions for the report
 
-- **Implemented through M5:** M0, M1, M2, M3, M4, and M5 are active and tested. Do not describe them as missing.
-- **Dormant analytics only:** `backend/app/api/analytics.py` is the remaining unintegrated prototype. Do not count it as scheduling or analytics delivery; active CPM scheduling lives in `backend/app/scheduling/`.
+- **Implemented through M8:** M0-M8 and the collaboration/account features are active and tested. Do not describe them as planned.
+- **Dormant analytics only:** `backend/app/api/analytics.py` is the remaining unintegrated prototype. Do not count it as scheduling or analytics delivery; active CPM scheduling lives in `backend/app/scheduling/` and active resource/risk code lives in `backend/app/services/`.
 - **Schedule calculation and read-only Gantt exist:** M4 computes dependency-aware dates, constraints, float, and critical path; M5 renders that schedule as a custom SVG Gantt.
-- **No resource model:** resources and assignments are intentionally deferred to M6. M4 does not include capacity or allocation data.
+- **Resources and risk exist:** M6 adds capacity, assignments, workload, and leveling; M7 adds synchronous seeded simulation. Neither is persisted as a saved analysis run.
 - **Calendar is editable:** editor/admin/owner users can change timezone, weekly working hours, and exceptions through the API and basic frontend editor. The frontend editor exposes one interval per day, while the API accepts multiple.
 - **SQLite only:** no PostgreSQL or other database support is implemented.
-- **Deployment docs are stale:** `docs/deployment.md` and `backend/Dockerfile` describe the earlier raw-SQLite prototype and its environment variables, not the current configuration.
-- **No benchmark results:** the 1,000-task performance target has not been measured in the repository.
+- **Deployment is documented but unexercised:** `docs/deployment.md` and `backend/Dockerfile` describe the current Gunicorn/SQLite/Alembic path; no production deployment or restore drill has been recorded.
+- **Benchmark results exist but are synthetic:** the 1,000-task schedule and risk measurements are recorded in `docs/evaluation.md`; they are not a controlled experiment.
 
 ### 13.2 Technical debt and risks
 
-- Only `analytics.py` remains from the older architecture; it should be deleted or ported before resource/risk work.
+- Only `analytics.py` remains from the older architecture; it should be deleted after confirming nothing depends on it.
 - The project calendar is created lazily if missing, so calendar code must preserve the one-calendar-per-project invariant.
 - Project version checks protect project edits; task, dependency, and calendar edits increment the version but task/dependency edits do not require a client-supplied version. Future schedule-affecting edits may need a stronger concurrency policy.
 - `pytest-flask` shares one application context and caches `g._login_user`; multi-user tests must switch users through one client (logout/login) rather than holding simultaneous clients.
-- M4 keeps calendar arithmetic and graph algorithms independent of Flask request state; route/service code handles authorization, versions, and error conversion.
-- The current CI verifies M0-M5; later modules must add their own tests and migration checks.
+- Calendar arithmetic, CPM, resource, and risk code remain independent of Flask request state; route/service code handles authorization, versions, and error conversion.
+- Risk simulation is synchronous and recalculates the full schedule per iteration; it took about 36 seconds for 1,000 tasks and 2,000 iterations. Background execution or lower iteration counts would be needed for stricter response targets.
+- Invitation email delivery depends on SMTP in production; without it the invitation is saved and the API returns `503 email_delivery_failed`.
 - The basic calendar editor collapses multiple intervals per day to one; the API retains multiple-interval support.
 
 ### 13.3 Resolved and open decisions
@@ -675,10 +733,11 @@ Resolved:
 - Organization membership is sufficient for access; workspace membership is not used.
 - Roles are `owner`, `admin`, `editor`, and `viewer`.
 - Projects start with a UTC Monday-Friday 09:00-17:00 calendar; M4 supports editable timezones, weekly rules, and exceptions.
-- M4 schedules are computed on demand and not persisted; M7 analysis runs will snapshot their inputs.
+- Schedules, workloads, leveling previews, and risk simulations are computed on demand and not persisted; risk responses include the seed and assumptions needed to reproduce a run.
 - The M5 Gantt uses custom SVG with no new charting dependency and is read-only in its first version.
-- Resources and assignments are deferred to M6.
-- Supported task constraints are `none`, start/finish no-earlier/no-later, and must-start/must-finish; they are stored inputs pending scheduling enforcement.
+- Resources and assignments are project-scoped and use an explainable heuristic preview, not an optimal solver.
+- Supported task constraints are `none`, start/finish no-earlier/no-later, and must-start/must-finish; M4 enforces them during scheduling.
+- Collaboration uses invitation tokens and in-app notifications; there is no live co-editing or email verification.
 
 Open:
 
@@ -693,11 +752,11 @@ The following structure maps directly to the evidence in this repository.
 | 1. Introduction | Background, problem statement, target users, academic objectives. | `README.md`, `plan.md` |
 | 2. Requirements and scope | Functional requirements, non-goals, roles, workflows, acceptance criteria. | `plan.md`, `docs/architecture.md` |
 | 3. System design | Modular monolith, architecture diagram, request lifecycle, data model, API conventions, security model. | `docs/architecture.md`, `docs/api-conventions.md`, this brief |
-| 4. Implemented modules | M0 foundation, M1 identity, M2 tenancy, M3 core planning, M4 scheduling, and M5 Gantt, including screenshots or endpoint examples. | `backend/app/`, `frontend/src/`, this brief |
-| 5. Testing and verification | Test strategy, 93 backend tests, 54 frontend tests, CI pipeline, migration cycle, manual test path. | `backend/tests/`, `frontend/src/**/*.test.*`, `.github/workflows/ci.yml` |
-| 6. Remaining modules | M6-M8 and evaluation, with scope, design, acceptance criteria, dependencies, and risks. | `plan.md`, this brief, `docs/scheduling-assumptions.md` |
-| 7. Limitations and risks | Dormant analytics, no resource/risk/ICS modules, stale deployment docs, SQLite-only scope. | This brief, repository inspection |
-| 8. Evaluation plan | Scenarios, performance measurement, user evaluation, reproducibility. | `plan.md`, `docs/scheduling-assumptions.md` |
+| 4. Implemented modules | M0 foundation, M1 identity, M2 tenancy, M3 planning, M4 scheduling, M5 Gantt, M6 resources, M7 risk, M8 export, and collaboration. | `backend/app/`, `frontend/src/`, this brief |
+| 5. Testing and verification | Test strategy, 108 backend tests, 64 frontend tests, CI pipeline, migration cycle, manual test path. | `backend/tests/`, `frontend/src/**/*.test.*`, `.github/workflows/ci.yml` |
+| 6. Collaboration and integration | Invitations, notifications, ICS export, and account controls. | `backend/app/api/collaboration.py`, `backend/app/api/accounts.py`, `frontend/src/components/` |
+| 7. Limitations and risks | Dormant analytics, SQLite-only scope, synchronous simulation, unexercised deployment, no user study. | This brief, `docs/evaluation.md` |
+| 8. Evaluation | Scenarios, performance measurement, reproducibility, and missing user evaluation. | `docs/evaluation.md`, `backend/scripts/benchmark.py` |
 | 9. Conclusion | What was achieved, what remains, lessons learned, next steps. | All of the above |
 | 10. References/appendix | Repository links, file index, glossary, API examples. | This brief |
 
@@ -722,10 +781,11 @@ The following structure maps directly to the evidence in this repository.
 | Organizations, roles, members, and workspaces are enforced by the API. | `backend/app/models/tenancy.py`, `backend/app/services/tenancy.py`, `backend/app/api/organizations.py`, `backend/tests/test_tenancy.py` | Active M2. |
 | Projects, tasks, dependencies, and editable calendars are supported. | `backend/app/models/planning.py`, `backend/app/services/planning.py`, `backend/tests/test_planning.py`, frontend workspace tests | Active M3/M4. |
 | Dependency-aware CPM scheduling, constraints, float, and critical path are supported. | `backend/app/scheduling/`, `backend/app/services/scheduling.py`, `backend/app/api/schedules.py`, `backend/tests/test_calendar.py`, `backend/tests/test_cpm.py`, `backend/tests/test_schedule.py` | Active M4; schedules are computed on demand. |
-| The frontend provides a role-aware planning workspace with calendar, schedule, and Gantt controls. | `frontend/src/pages/WorkspacePage.tsx`, `frontend/src/components/GanttChart.tsx`, `frontend/src/pages/WorkspacePage.test.tsx`, `frontend/src/components/GanttChart.test.tsx`, `frontend/src/lib/api.test.ts` | Active; no resource views. |
+| The frontend provides a role-aware planning workspace with calendar, schedule, Gantt, resource, risk, collaboration, and account controls. | `frontend/src/pages/WorkspacePage.tsx`, `frontend/src/components/`, frontend tests | Active. |
 | The project supports read-only Gantt visualization of the computed schedule. | `frontend/src/components/GanttChart.tsx`, `frontend/src/components/GanttChart.test.tsx` | Active M5; drag/resize editing is not implemented. |
-| The project supports resource leveling, risk simulation, or ICS export. | `plan.md`, `docs/scheduling-assumptions.md` | Planned only; no active implementation. |
-| CI verifies migrations, seeding, backend tests, frontend tests, and frontend build. | `.github/workflows/ci.yml` | Active for M0-M5. |
+| The project supports resource workloads, leveling previews, seeded risk simulation, and ICS export. | `backend/app/services/resources.py`, `backend/app/services/risk.py`, `backend/app/services/export.py`, matching API modules and tests | Active M6-M8; previews and simulations are on demand. |
+| The project supports invitations, notifications, and account export/deletion. | `backend/app/services/collaboration.py`, `backend/app/services/account.py`, `backend/tests/test_collaboration.py` | Active; no email verification or password reset. |
+| CI verifies migrations, seeding, backend tests, frontend tests, and frontend build. | `.github/workflows/ci.yml` | Active for M0-M8. |
 
 ---
 
@@ -734,19 +794,19 @@ The following structure maps directly to the evidence in this repository.
 ### 15.1 Backend
 
 - Command from `backend/`: `..\.venv\Scripts\python.exe -m pytest -q` (or `pytest` with the virtual environment active).
-- Result at the snapshot: **93 passed, 1 warning**.
-- Test modules: `test_auth.py`, `test_calendar.py`, `test_config.py`, `test_cpm.py`, `test_csrf_auth.py`, `test_csrf_tenancy.py`, `test_db.py`, `test_errors.py`, `test_health.py`, `test_planning.py`, `test_request_context.py`, `test_schedule.py`, `test_seed.py`, `test_tenancy.py`.
+- Result at the snapshot: **108 passed, 1 third-party deprecation warning**.
+- Test modules: `test_auth.py`, `test_calendar.py`, `test_collaboration.py`, `test_config.py`, `test_cpm.py`, `test_csrf_auth.py`, `test_csrf_tenancy.py`, `test_db.py`, `test_errors.py`, `test_export.py`, `test_health.py`, `test_planning.py`, `test_request_context.py`, `test_resources.py`, `test_risk.py`, `test_schedule.py`, `test_seed.py`, `test_tenancy.py`.
 - Fixtures: `backend/tests/conftest.py` creates an isolated temporary SQLite database per app and drops it after the test.
 - CI also runs migrations up, down to base, and up again, then runs `seed-demo`.
-- Migration cycle was also verified manually for `6f1a2b3c4d5e_add_tenancy.py` and `7a2b3c4d5e6f_add_planning.py`.
+- The full migration chain was verified locally up, down to base, and up again through collaboration revision `9c3d5e7f8a9b`.
 
 ### 15.2 Frontend
 
 - Command: `npm test` from `frontend/`.
-- Result at the snapshot: **54 passed** across 6 test files.
-- Test files: `App.test.tsx`, `auth/AuthContext.test.tsx`, `pages/LoginPage.test.tsx`, `pages/WorkspacePage.test.tsx`, `components/GanttChart.test.tsx`, `lib/api.test.ts`.
+- Result at the snapshot: **64 passed** across 11 test files.
+- Test files: `App.test.tsx`, `auth/AuthContext.test.tsx`, `pages/LoginPage.test.tsx`, `pages/WorkspacePage.test.tsx`, `components/GanttChart.test.tsx`, `components/ResourceWorkloadPanel.test.tsx`, `components/RiskSimulationPanel.test.tsx`, `components/InvitationPanel.test.tsx`, `components/NotificationPanel.test.tsx`, `components/AccountPanel.test.tsx`, `lib/api.test.ts`.
 - Build: `npm run build` runs `tsc --noEmit && vite build`; verified successfully.
-- Workspace tests cover initial loading, organization/project/task/dependency creation, calendar updates, schedule rendering, Gantt rendering, API errors, and viewer read-only controls.
+- Workspace tests cover initial loading, organization/project/task/dependency creation, calendar updates, schedule rendering, Gantt rendering, resource/risk/invitation/notification/account controls, API errors, and viewer read-only controls.
 
 ### 15.3 Manual verification path
 
@@ -754,8 +814,9 @@ The following structure maps directly to the evidence in this repository.
 2. From `frontend/`: `npm ci`, `npm run dev`.
 3. Open the Vite URL, verify the health status, and sign in with `owner@demo.local` / `DemoPulse123!`.
 4. Confirm the demo organization, workspace, project, tasks, and dependencies load; create and edit a task or dependency; reload to confirm session restore.
-5. Sign out and sign in as `viewer@demo.local` to confirm planning controls are read-only.
-6. Check `http://127.0.0.1:5000/api/v1/health` returns `database: "ok"`.
+5. Create a resource and assignment, inspect workload and a leveling preview, run a seeded risk simulation, and download the ICS file.
+6. Sign out and sign in as `viewer@demo.local` to confirm planning controls are read-only.
+7. Check `http://127.0.0.1:5000/api/v1/health` returns `database: "ok"`.
 
 ## 16. Evidence index
 
@@ -774,30 +835,44 @@ The following structure maps directly to the evidence in this repository.
 | [backend/app/api/tasks.py](../backend/app/api/tasks.py) | Task endpoints. |
 | [backend/app/api/dependencies.py](../backend/app/api/dependencies.py) | Dependency endpoints. |
 | [backend/app/api/schedules.py](../backend/app/api/schedules.py) | On-demand project schedule endpoint. |
+| [backend/app/api/resources.py](../backend/app/api/resources.py) | Resource, assignment, workload, and leveling endpoints. |
+| [backend/app/api/risk.py](../backend/app/api/risk.py) | Seeded risk-simulation endpoint. |
+| [backend/app/api/exports.py](../backend/app/api/exports.py) | Authenticated ICS export endpoint. |
+| [backend/app/api/collaboration.py](../backend/app/api/collaboration.py) | Notification and invitation endpoints. |
+| [backend/app/api/accounts.py](../backend/app/api/accounts.py) | Account export and deletion endpoints. |
 | [backend/app/api/__init__.py](../backend/app/api/__init__.py) | Registered blueprints; excludes dormant analytics. |
 | [backend/app/models/user.py](../backend/app/models/user.py) | User model. |
 | [backend/app/models/tenancy.py](../backend/app/models/tenancy.py) | Organization, membership, and workspace models. |
-| [backend/app/models/planning.py](../backend/app/models/planning.py) | Project, calendar, task, and dependency models. |
+| [backend/app/models/planning.py](../backend/app/models/planning.py) | Project, calendar, task, dependency, resource, and assignment models. |
+| [backend/app/models/collaboration.py](../backend/app/models/collaboration.py) | Notification and workspace-invitation models. |
 | [backend/app/services/identity.py](../backend/app/services/identity.py) | Password, email, authentication, and demo-user seeding. |
 | [backend/app/services/tenancy.py](../backend/app/services/tenancy.py) | Access checks, tenancy CRUD, and role rules. |
 | [backend/app/services/planning.py](../backend/app/services/planning.py) | Planning validation, CRUD, versioning, and graph checks. |
 | [backend/app/services/scheduling.py](../backend/app/services/scheduling.py) | Calendar updates and schedule-response assembly. |
+| [backend/app/services/resources.py](../backend/app/services/resources.py) | Resource CRUD, workload, overloads, and leveling preview. |
+| [backend/app/services/risk.py](../backend/app/services/risk.py) | Seeded PERT/Monte Carlo simulation. |
+| [backend/app/services/export.py](../backend/app/services/export.py) | ICS generation and escaping. |
+| [backend/app/services/collaboration.py](../backend/app/services/collaboration.py) | Invitations and notifications. |
+| [backend/app/services/account.py](../backend/app/services/account.py) | Account export and deletion. |
+| [backend/scripts/benchmark.py](../backend/scripts/benchmark.py) | Reproducible 1,000-task performance benchmark. |
 | [backend/app/scheduling/calendar.py](../backend/app/scheduling/calendar.py) | Timezone-aware working calendar and exception handling. |
 | [backend/app/scheduling/cpm.py](../backend/app/scheduling/cpm.py) | CPM forward/backward passes, constraints, floats, and critical path. |
 | [backend/app/scheduling/graph.py](../backend/app/scheduling/graph.py) | Dependency topology and cycle validation. |
 | [backend/app/services/demo.py](../backend/app/services/demo.py) | Idempotent demo tenant seeding. |
-| [backend/migrations/versions/](../backend/migrations/versions/) | Alembic baseline, users, tenancy, and planning revisions. |
-| [backend/tests/](../backend/tests/) | Backend test evidence for M0-M4. |
+| [backend/migrations/versions/](../backend/migrations/versions/) | Alembic baseline, users, tenancy, planning, resources, and collaboration revisions. |
+| [backend/tests/](../backend/tests/) | Backend test evidence for M0-M8. |
 | [frontend/src/App.tsx](../frontend/src/App.tsx) | Session/health/login shell and workspace rendering. |
 | [frontend/src/auth/AuthContext.tsx](../frontend/src/auth/AuthContext.tsx) | Client session state and login/logout operations. |
 | [frontend/src/lib/api.ts](../frontend/src/lib/api.ts) | CSRF-aware API client, planning types, and schedule/calendar calls. |
 | [frontend/src/pages/LoginPage.tsx](../frontend/src/pages/LoginPage.tsx) | Sign-in form and error display. |
-| [frontend/src/pages/WorkspacePage.tsx](../frontend/src/pages/WorkspacePage.tsx) | Role-aware organization/workspace/project/task/dependency UI, calendar editor, and schedule summary. |
+| [frontend/src/pages/WorkspacePage.tsx](../frontend/src/pages/WorkspacePage.tsx) | Role-aware planning workspace plus Gantt, resource, risk, invitation, notification, and account panels. |
+| [frontend/src/components/](../frontend/src/components/) | Gantt, resource, risk, invitation, notification, and account components with tests. |
 | [frontend/src/](../frontend/src/) | Frontend tests and test setup. |
 | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | CI commands and quality gates. |
 | [docs/api-conventions.md](api-conventions.md) | API/error/CSRF/authorization conventions. |
 | [docs/architecture.md](architecture.md) | Architecture, tenancy boundary, and module status. |
-| [docs/scheduling-assumptions.md](scheduling-assumptions.md) | Scheduling conventions and open decisions. |
+| [docs/scheduling-assumptions.md](scheduling-assumptions.md) | Scheduling and analytics conventions and decisions. |
+| [docs/evaluation.md](evaluation.md) | Test counts, migration cycle, benchmark results, scenarios, and limits. |
 | [plan.md](../plan.md) | Full product scope, phases, and current status. |
 | [README.md](../README.md) | Setup, demo tenant, tests, and current status. |
 
@@ -822,14 +897,14 @@ The following structure maps directly to the evidence in this repository.
 
 ## 18. Final checklist for the report author
 
-- [ ] State that M0-M5 are implemented.
-- [ ] State that resource analytics, risk simulation, ICS export, and the evaluation are not implemented.
+- [ ] State that M0-M8 and the collaboration/account features are implemented.
+- [ ] State that automated evaluation and benchmarks exist, but no human user evaluation was conducted.
 - [ ] State that the M5 Gantt is read-only; drag/resize editing is not implemented.
-- [ ] Explain that only `analytics.py` remains dormant; organization/workspace/project/task modules are active.
-- [ ] Include the actual API table and the remaining API outline separately.
-- [ ] Include the implemented ER model and the future entities separately.
-- [ ] Include the 93 backend / 54 frontend test results, migration cycle, and CI pipeline.
-- [ ] Include the stale deployment-document warning.
+- [ ] Explain that only `analytics.py` remains dormant; organization/workspace/project/task/resource modules are active.
+- [ ] Include the actual API table and the target-model outline separately.
+- [ ] Include the implemented ER model and future entities separately.
+- [ ] Include the 108 backend / 64 frontend test results, migration cycle, and CI pipeline.
+- [ ] Include the benchmark hardware, workload shape, timing, and synchronous-simulation limitation.
 - [ ] Include limitations, resolved/open decisions, and future work.
 - [ ] Use the suggested outline and figures, adapting them to the course requirements.
-- [ ] Cite the verified working-tree snapshot and note that the M2-M5 commit is pending.
+- [ ] Cite the repository snapshot and the M9 evaluation document.

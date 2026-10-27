@@ -24,7 +24,7 @@ Every error response uses one envelope:
 
 Core codes: `invalid_json`, `validation_error`, `bad_request`, `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `csrf_error`, `internal_error`.
 
-Tenancy, planning, and scheduling add domain codes such as `invalid_name`, `invalid_role`, `member_not_found`, `member_exists`, `last_owner`, `workspace_conflict`, `project_conflict`, `stale_project`, `invalid_date`, `invalid_date_range`, `invalid_status`, `invalid_description`, `invalid_parent`, `parent_cycle`, `invalid_duration`, `invalid_progress`, `invalid_priority`, `invalid_constraint`, `invalid_constraint_date`, `invalid_estimates`, `invalid_task`, `invalid_dependency_type`, `invalid_lag`, `self_dependency`, `cross_project_dependency`, `duplicate_dependency`, `dependency_cycle`, `invalid_calendar`, `invalid_timezone`, `invalid_weekly_rules`, `invalid_exception`, `invalid_schedule`, `schedule_infeasible`, `schedule_horizon_exceeded`, `empty_update`, `unsupported_field`, `invalid_pagination`, `organization_creation_failed`, `task_creation_failed`, and `task_update_failed`.
+Tenancy, planning, and scheduling add domain codes such as `invalid_name`, `invalid_role`, `member_not_found`, `member_exists`, `last_owner`, `workspace_conflict`, `project_conflict`, `stale_project`, `invalid_date`, `invalid_date_range`, `invalid_status`, `invalid_description`, `invalid_parent`, `parent_cycle`, `invalid_duration`, `invalid_progress`, `invalid_priority`, `invalid_constraint`, `invalid_constraint_date`, `invalid_estimates`, `invalid_task`, `invalid_dependency_type`, `invalid_lag`, `self_dependency`, `cross_project_dependency`, `duplicate_dependency`, `dependency_cycle`, `invalid_calendar`, `invalid_timezone`, `invalid_weekly_rules`, `invalid_exception`, `invalid_schedule`, `schedule_infeasible`, `schedule_horizon_exceeded`, `empty_update`, `unsupported_field`, `invalid_pagination`, `organization_creation_failed`, `task_creation_failed`, `task_update_failed`, `already_member`, `invalid_invitation`, `invitation_email_mismatch`, `email_delivery_failed`, `risk_simulation_infeasible`, `invalid_credentials`, `invalid_resource`, `invalid_capacity`, `resource_conflict`, and `duplicate_assignment`.
 
 Status mapping: validation and malformed input `400`, unauthenticated `401`, unauthorized `403`, missing resource `404`, wrong method `405`, conflict `409`, unsupported media type `415`, unprocessable planning/scheduling input `422`, unexpected server failure `500`, unavailable dependency `503`.
 
@@ -61,10 +61,10 @@ Organization membership is the access boundary. A membership has one role:
 
 | Role | Capabilities |
 | --- | --- |
-| `owner` | All tenancy, member, workspace, project, task, and dependency actions; delete organization; manage the `owner` role. |
-| `admin` | Manage non-owner members; create/rename/delete workspaces; create/update/delete projects; edit tasks and dependencies. Cannot delete the organization or grant/manage `owner`. |
-| `editor` | Create/update projects; create/update/delete tasks and dependencies. Cannot manage tenancy, members, or delete projects. |
-| `viewer` | Read-only access to organizations, members, workspaces, projects, calendar, tasks, dependencies, and schedules. |
+| `owner` | All tenancy, member, invitation, workspace, project, task, dependency, and resource actions; delete organization; manage the `owner` role. |
+| `admin` | Manage non-owner members and invitations; create/rename/delete workspaces; create/update/delete projects; edit tasks, dependencies, and resources. Cannot delete the organization or grant/manage `owner`. |
+| `editor` | Create/update projects; create/update/delete tasks, dependencies, and resources. Cannot manage tenancy, members, invitations, or delete projects. |
+| `viewer` | Read-only access to organizations, members, workspaces, projects, calendar, tasks, dependencies, schedules, resources, and analytics. |
 
 Non-members receive `404` rather than learning that a resource exists. Members with insufficient role receive `403 forbidden`. The API prevents removing or demoting the last organization owner with `409 last_owner`.
 
@@ -125,6 +125,43 @@ List endpoints accept `limit` (default 50, maximum 100) and `offset` (non-negati
 - A target finish is an advisory backward-pass boundary. Missing it returns a `target_finish_missed` warning and negative float; it does not reject the schedule.
 - Conflicting hard constraints or dependency/constraint combinations return `422 schedule_infeasible`. A fixed constraint date on a nonworking day returns `422 invalid_constraint_date`.
 - Calendar rules use `mon` through `sun`, at least one working interval, and non-overlapping intervals. Exceptions use `{date, name, working, intervals}` and replace the weekly rule for that date. Timezones must be valid IANA names.
+
+## Resources and analytics
+
+Editor, admin, and owner roles manage resources and assignments; viewers may read them and request analytics.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/projects/<id>/resources` | List project resources |
+| `POST` | `/api/v1/projects/<id>/resources` | Create a resource |
+| `PATCH` | `/api/v1/projects/<id>/resources/<resource_id>` | Update a resource |
+| `DELETE` | `/api/v1/projects/<id>/resources/<resource_id>` | Delete a resource |
+| `GET` | `/api/v1/projects/<id>/assignments` | List task assignments |
+| `POST` | `/api/v1/projects/<id>/assignments` | Assign a resource to a task |
+| `PATCH` | `/api/v1/projects/<id>/assignments/<assignment_id>` | Update allocation |
+| `DELETE` | `/api/v1/projects/<id>/assignments/<assignment_id>` | Remove an assignment |
+| `GET` | `/api/v1/projects/<id>/workload` | Return load and overload intervals |
+| `POST` | `/api/v1/projects/<id>/leveling-preview` | Preview leveling proposals |
+| `POST` | `/api/v1/projects/<id>/risk-simulation` | Run a seeded PERT/Monte Carlo simulation |
+
+The leveling preview is read-only: it proposes changes but does not mutate tasks. The risk-simulation body accepts an optional `seed` and `iterations`; iterations default to 2,000 and must be between 100 and 10,000. The response includes the seed, project version, deterministic finish, finish percentiles, target probability, per-task distributions, and assumptions.
+
+## Export, collaboration, and account
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/projects/<id>/export.ics` | Download an all-day ICS calendar |
+| `GET` | `/api/v1/notifications` | List the current user's notifications |
+| `PATCH` | `/api/v1/notifications/<id>` | Mark one notification read |
+| `POST` | `/api/v1/notifications/read-all` | Mark all notifications read |
+| `GET` | `/api/v1/organizations/<id>/invitations` | List pending invitations (admin/owner) |
+| `POST` | `/api/v1/organizations/<id>/invitations` | Create an invitation (admin/owner) |
+| `DELETE` | `/api/v1/organizations/<id>/invitations/<invitation_id>` | Revoke an invitation |
+| `POST` | `/api/v1/invitations/accept` | Accept an invitation with a token |
+| `GET` | `/api/v1/account/export` | Download the current account as JSON |
+| `DELETE` | `/api/v1/account` | Delete the account after password confirmation |
+
+Invitation responses include `accept_token` outside production so development clients can complete the flow without email. Invitations expire after seven days and must be accepted by the invited email address. Account deletion removes a sole-member organization; otherwise an owner role passes to an admin or the earliest remaining member.
 
 ## Health
 

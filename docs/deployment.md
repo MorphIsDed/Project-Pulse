@@ -1,27 +1,50 @@
 # Deployment
 
-## Current production boundary
+## Production boundary
 
-The backend has a production WSGI image definition in `backend/Dockerfile`. Run it behind a TLS-terminating reverse proxy (for example, Caddy or a managed load balancer), and serve the built frontend from the same site origin. Forward `/api/*` to port 8000. Set the proxy's forwarded-proto header and restrict direct access to the backend port. The app logs Gunicorn access and error output to standard streams for the container platform to collect.
+The backend has a production WSGI image definition in `backend/Dockerfile`. Run it behind a TLS-terminating reverse proxy, and serve the Vite build from the same site origin. Forward `/api/*` to the API on port 8000. The image runs Gunicorn with two workers and logs access and error output to standard streams.
 
-Copy `.env.example` to a deployment secret store and replace the placeholder key with a cryptographically random value. Configure the public hostname in both `PROJECTPULSE_TRUSTED_HOSTS` and `PROJECTPULSE_ALLOWED_ORIGINS`. `PROJECTPULSE_COOKIE_SECURE=1` is required in production. Do not use Vite's development server or Flask's development server in production.
+The image sets `APP_ENV=production` and defaults `DATABASE_URL` to `sqlite:////data/projectpulse.sqlite3`. Mount a persistent writable volume at `/data` and keep the volume when replacing containers. Set `SECRET_KEY` to a cryptographically random value at runtime; the app refuses to start in production without it. Set `PUBLIC_URL` to the browser-facing HTTPS origin so invitation links point to the deployed frontend.
 
-Build from the repository root so the Dockerfile can copy `requirements.txt` and `backend/`:
+Production cookies are secure and HTTP-only. Build the frontend with `npm run build` and serve `frontend/dist` from the reverse proxy or static host on the same site origin as the API. Do not use Vite's development server or Flask's development server in production.
+
+Build from the repository root because the Dockerfile copies the root `requirements.txt` and `backend/`:
 
 ```sh
 docker build -f backend/Dockerfile -t projectpulse-api .
+docker run --rm \
+  -e SECRET_KEY="replace-with-a-random-secret" \
+  -e PUBLIC_URL="https://pulse.example.com" \
+  -v projectpulse-data:/data \
+  -p 8000:8000 \
+  projectpulse-api
 ```
 
-Mount a persistent writable volume at `/data`, then set `PROJECTPULSE_DATABASE=/data/projectpulse.sqlite3`. Initialize a new database with `flask --app wsgi init-db` from the container's `/app` directory before accepting traffic. Preserve the volume when replacing containers.
+Run migrations and seed the demo tenant only when appropriate before accepting traffic:
 
-## Database and migration blocker
+```sh
+docker run --rm -e SECRET_KEY="replace-with-a-random-secret" \
+  -v projectpulse-data:/data projectpulse-api flask --app wsgi db upgrade
+docker run --rm -e SECRET_KEY="replace-with-a-random-secret" \
+  -v projectpulse-data:/data projectpulse-api flask --app wsgi seed-demo
+```
 
-The current API uses SQLite's Python driver, `?` placeholders, `lastrowid`, SQLite DDL, and SQLite-specific schema bootstrapping. PostgreSQL is **not supported yet**. `Flask-Migrate` appearing in the root requirements does not currently provide migrations: it is not initialized, and the schema is still created by `init-db`. Do not point `PROJECTPULSE_DATABASE` at a PostgreSQL URL. Before a production launch, migrate persistence to a dialect-aware layer, add versioned migrations for both existing SQLite data and PostgreSQL, and exercise an upgrade from a real copy of the current schema.
+`flask seed-demo` refuses production unless `--force` is passed.
+
+## Email
+
+Organization invitations use SMTP. Configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM`, and optional `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_USE_TLS`. Without SMTP configuration, production invitation creation returns `503 email_delivery_failed`; the invitation is saved and can still be shared manually. In development, missing SMTP logs the invitation email instead. There is no email verification or password reset flow.
+
+## Database and migrations
+
+SQLite is the only supported database. Flask-Migrate/Alembic is the schema-change path; `init-db` from older prototype notes is not used. Apply upgrades with `flask --app wsgi db upgrade` from `/app` or through the migration command above. Review migrations before applying, and back up the database before an upgrade.
 
 ## Backups and restore
 
-Backups are not automated yet. For SQLite, use the SQLite online backup API (or a storage snapshot taken after quiescing writes) to create consistent copies; do not copy the live database file with ordinary file-copy tools. Store encrypted backups outside the application host, rotate them according to an approved retention policy, and perform a restore drill into an isolated environment before launch. No successful restore drill has been recorded for this repository.
+Backups are not automated. For SQLite, use the SQLite online backup API or a storage snapshot taken after quiescing writes; do not copy a live database with ordinary file-copy tools. Store encrypted backups outside the application host, rotate them according to an approved retention policy, and rehearse a restore into an isolated environment. No successful restore drill has been recorded for this repository.
 
-## Edge and health checks
+## Health and operations
 
-Terminate HTTPS at the proxy and redirect HTTP to HTTPS there. Restrict accepted hostnames at both the proxy and `PROJECTPULSE_TRUSTED_HOSTS`. The API health endpoint checks database connectivity at `/api/v1/health` and returns 503 if the query fails. Configure the platform to collect stdout/stderr and alert on repeated 5xx responses. There is no external error-monitoring integration yet.
+Terminate HTTPS at the proxy and redirect HTTP to HTTPS there. Restrict direct access to the backend port. `GET /api/v1/health` checks database connectivity and returns `503` when the query fails. Collect stdout/stderr, alert on repeated 5xx responses, and monitor the response time of risk simulation: it runs synchronously and took about 35 seconds for 1,000 tasks with 2,000 iterations on the benchmark machine.
+
+There is no external error-monitoring integration. Request IDs are returned in `X-Request-ID` and are included in logs and error envelopes.

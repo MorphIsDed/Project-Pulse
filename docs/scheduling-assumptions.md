@@ -37,11 +37,11 @@ Calendar validation requires an IANA timezone, all seven day keys (`mon` through
 
 ## Resources and leveling
 
-Resource capacity and assignment units are compared over working intervals. Overload results identify the resource, interval, assigned load, capacity, and contributing tasks. A leveling preview preserves dependency and fixed-date constraints, ranks movable tasks by lower priority first, then larger available float, then stable task ID, and proposes changes for user acceptance. It is a heuristic, not an optimal solution.
+Resource capacity and assignment units are compared over working intervals. Overload results identify the resource, interval, assigned load, capacity, and contributing tasks. A leveling preview preserves dependency and fixed-date constraints, ranks movable tasks by lower priority first, then larger available float, then stable task ID, and proposes changes for user acceptance. It is a heuristic, not an optimal solution. The preview may extend the project finish when a proposal requires it, but only while the simulated finish remains on or before `target_finish`; otherwise the proposal is rejected.
 
 ## Risk simulation
 
-Optimistic, most-likely, and pessimistic durations are explicit user inputs. The PERT mean is `(a + 4m + b) / 6`; beta-PERT sampling is the initial distribution. Tasks without estimate ranges remain deterministic. A run records its random seed, iteration count, target deadline, project version, and distribution settings. Report median/percentile finish dates and deadline-hit probability with the assumptions; results are planning estimates, not guarantees.
+Optimistic, most-likely, and pessimistic durations are explicit user inputs. The PERT mean is `(a + 4m + b) / 6`; beta-PERT sampling is the distribution. A task uses the beta-PERT sample only when all three estimates are present and `0 <= a <= m <= b`; otherwise it keeps its deterministic duration in every iteration. A run records its random seed, iteration count, target deadline, project version, and distribution assumptions. Report median/percentile finish dates, deadline-hit probability, and per-task critical frequency with the assumptions; results are planning estimates, not guarantees. Iterations default to 2,000 and are limited to 100-10,000, and the endpoint runs synchronously.
 
 ## Decisions
 
@@ -52,8 +52,8 @@ Resolved for the first release:
 - M4 enforces all seven task constraints during scheduling. Must-start/must-finish conflicts are hard errors; no-earlier/no-later bounds and target finish are applied explicitly.
 - M4 supports editable timezones, weekly rules, and date exceptions. The default remains UTC Monday-Friday 09:00-17:00.
 - The Gantt uses a custom SVG implementation with no new charting dependency; the current version is read-only.
-- Schedules are computed on demand and are not persisted; M7 analysis runs will snapshot their inputs separately.
-- Seeded local password accounts are sufficient for the demo.
+- Schedules, resource workloads, leveling previews, and risk simulations are computed on demand and are not persisted; simulations return the seed, project version, and assumptions needed to reproduce them.
+- Seeded local password accounts are sufficient for the demo; invitation delivery uses SMTP when configured and otherwise logs in development.
 
 Still open:
 
