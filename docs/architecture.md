@@ -1,61 +1,23 @@
-# ProjectPulse architecture
+# Architecture
 
-## Purpose
+ProjectPulse is a modular monolith: React/TypeScript calls a same-origin Flask JSON API under `/api/v1`; SQLAlchemy persists inputs in SQLite. Alembic manages schema history. NumPy and pandas provide compact analytics without a worker, cache, or new datastore.
 
-ProjectPulse is a locally deployed planning and analysis application for multiple organizations, workspaces, projects, and users. The first release targets projects of about 1,000 tasks and does not provide live co-editing.
+## Backend
 
-## Architecture
+API modules handle authentication, health, organizations, workspaces, projects, tasks, dependencies, schedules, and ICS export. Service modules contain identity, tenancy, planning, scheduling, summary, export, and demo-seeding behavior. Calendar arithmetic, graph validation, and CPM remain independent of Flask request state.
 
-Use a modular monolith: one Flask application, one SQLite database, and one React/TypeScript frontend. Keep scheduling and analytics as deterministic Python modules that do not depend on Flask request state. Route handlers validate/authenticate/authorize requests and call services; services coordinate repositories, persistence, scheduling, and analytics.
+The project summary service reads task status/duration columns, constructs a pandas DataFrame, aggregates status counts, and uses NumPy for positive-duration mean/median/p90. Schedules and summaries are computed on demand; neither overwrites planning inputs. The obsolete analytics prototype has been deleted.
 
-```text
-Browser (React + TypeScript)
-        | versioned JSON HTTP API
-Flask application
-  auth and permissions | project/task services | integrations
-        |                    |                    |
-     SQLite          scheduling + analytics     ICS export
-```
+## Access and storage
 
-SQLite is appropriate for local academic deployment and modest concurrent use. Use transactions and optimistic project versions. Do not promise live simultaneous editing. Consider another database only if measured needs require it.
+Users are global identities. Organizations own workspaces, which own projects. Organization membership is the access boundary, with owner/admin/editor/viewer roles. Every project endpoint, including summary, verifies membership; non-members receive 404 and insufficient roles receive 403. Session mutations require CSRF. Project and calendar edits retain optimistic version checks.
 
-## Initial module boundaries
+Active models are users, organizations, memberships, workspaces, projects, calendars, tasks, and dependencies. Legacy resources, assignments, notifications, invitations, and task estimates remain mapped solely for database compatibility. No migration or existing data is rewritten by feature retirement. Normal explicit parent deletion retains existing foreign-key cascade semantics.
 
-- `backend/app/api`: thin versioned route handlers.
-- `backend/app/models` and `repositories`: persistence mapping and queries.
-- `backend/app/services`: identity, project/task operations, and authorization.
-- `backend/app/scheduling`: graph validation, calendar arithmetic, constraints, CPM.
-- `backend/app/analytics`: resource load, leveling preview, risk simulation.
-- `frontend/src`: navigation, project/task editing, Gantt, resources, analytics.
-- `docs`: architecture, API contract, scheduling assumptions, and user guide.
+## Frontend
 
-## Tenant access
+App handles session restoration and login. WorkspacePage owns selected organization/workspace/project, retained mutation handlers, and Tasks/Timeline/Settings navigation. Dialog supplies native modal behavior and focus restoration. Task and calendar forms preserve drafts on failure. GanttChart remains a custom read-only SVG. Summary failure is isolated from task loading/editing, and project changes discard stale selection. CSS variables provide system light/dark themes and responsive top navigation.
 
-Users are global identities. Organizations own workspaces; workspaces own projects. Organization membership grants the base organization boundary. Workspace membership, when enabled, narrows access. Every project read and mutation must verify the caller's membership through the owning organization and any applicable workspace rule. IDs supplied by the browser are never proof of access.
+## Limits
 
-## Persistence and audit conventions
-
-Persistence uses SQLite with Flask-SQLAlchemy for identity records and Alembic migrations for the complete application schema. Run `flask db upgrade` from `backend`; use batch mode for SQLite `ALTER` operations. The core-schema migration preserves the legacy SQLite triggers and compatibility alterations through the idempotent schema initializer. Do not run schema creation during application startup or edit applied migrations.
-
-Use integer primary keys, foreign keys, unique membership pairs, and ISO 8601 dates/timestamps. Store audit timestamps in UTC. Enable SQLite foreign-key enforcement on every connection. Store schedule inputs separately from calculated dates. Store a project version and require expected-version checks for edits that can affect a schedule. Save analysis kind, input project version, parameters, summary, creator, and timestamp for reproducibility.
-
-The initial data model includes organizations, users, organization/workspace memberships, workspaces, projects, tasks, dependencies, project calendars, resources, assignments, analysis runs, and lightweight audit events. Project calendars are the first-release calendar policy; cross-project resource pooling is out of scope.
-
-## API conventions
-
-Expose JSON under `/api/v1`. Use consistent errors with stable machine-readable codes and readable messages. Paginate list endpoints. Keep frontend and API same-origin in local deployment where practical; use cookie sessions and CSRF protection for state-changing requests if session authentication is selected. Keep secrets and deployment configuration outside source control.
-
-## Delivery order
-
-1. Agree on requirements and scheduling conventions.
-2. Establish React/Flask/SQLite local skeleton and health route.
-3. Add identity, organizations, workspaces, and permission checks.
-4. Add project/task/dependency CRUD.
-5. Add calendar-aware scheduling, Gantt, critical path, and float.
-6. Add resource analysis, then risk simulation.
-7. Add ICS export and polish.
-8. Evaluate scenarios and performance near 1,000 tasks; document measured limits.
-
-## Boundaries
-
-The initial release excludes live co-editing, advanced portfolio optimization, cross-project resource pooling, enterprise SSO, two-way calendar synchronization, and claims of globally optimal resource leveling. Resource leveling is an explainable preview users accept or reject. Deadline confidence is conditional on the duration estimates and model assumptions.
+SQLite only; no live co-editing, background jobs, drag/resize Gantt, risk simulation, resource leveling, email delivery, or account self-service tools. The basic calendar form edits one interval per day and preserves existing exceptions; the API supports multiple intervals and date exceptions. List endpoints retain their existing pagination contract; the frontend follows task/dependency pages to load the complete plan.

@@ -6,7 +6,7 @@ This document records the first-release defaults for ProjectPulse. These convent
 
 - API dates use ISO 8601 calendar dates (`YYYY-MM-DD`); audit timestamps use UTC ISO 8601 timestamps.
 - A task's schedule is represented internally by start and finish event times. The finish event is an exclusive boundary: a one-working-day task starting at the beginning of a workday finishes at the end of that day's working interval. The UI may display the last occupied date, but conversion must be explicit.
-- Project schedules use one project calendar in the first release. The calendar defines timezone, weekly work intervals, holidays, and dated exceptions.
+- Project schedules use one project calendar in the first release. Projects start with a `UTC` calendar using Monday-Friday 09:00-17:00 working intervals and an empty exception list. The app makes the calendar editable by editor, admin, and owner roles; the frontend edits one working window per day, while the API accepts multiple non-overlapping intervals per day.
 - All durations and lags are integer working minutes. Calendar arithmetic skips nonworking intervals. Negative lag is permitted and moves a bound earlier in working time; it does not bypass dependency-cycle or hard-constraint checks.
 - Zero-duration tasks are milestones. They occupy an event time and consume no working minutes.
 
@@ -25,25 +25,20 @@ The same event-time rules apply in forward and backward passes. An acyclic graph
 
 Persist user-entered duration, estimates, constraints, dependencies, progress, and calendar data as inputs. Persist or return calculated start/finish, earliest/latest dates, total/free float, and critical status as derived values. Derived values must be recalculated from a consistent project snapshot and must not overwrite the underlying estimates or constraints.
 
-For unconstrained projects, project finish is the latest task finish. If a target finish or explicit deadline is selected as the backward-pass boundary, use that boundary and make it visible in the result. Total float is the working-time distance between earliest and latest start (equivalently finish under consistent event-time semantics). Zero total float is critical. Free float is the interval before the task would constrain any successor event.
+For unconstrained projects, project finish is the latest task finish. If a target finish or explicit deadline is selected as the backward-pass boundary, use that boundary and make it visible in the result. A missed target is advisory: return a warning and negative float rather than rejecting the schedule. Total float is the working-time distance between earliest and latest start (equivalently finish under consistent event-time semantics). Zero total float is critical. Free float is the interval before the task would constrain any successor event.
+
+The app calculates schedules on demand from the current project version and does not persist derived dates. When the project has no start date, use today in the calendar timezone and return a warning. Move a nonworking project start to the next working instant and report the adjustment. Hard constraint conflicts return `422 schedule_infeasible`; never silently move a must-start or must-finish date. The forward and backward passes apply the same FS/SS/FF/SF event rules.
 
 ## Calendars
 
-Calendar operations must include adding/subtracting working minutes and measuring working minutes between event times. Work intervals, holidays, and exceptions are applied using the project's configured timezone. Calendar behavior around daylight-saving transitions must be specified by the implementation and covered by scenarios before release; internal arithmetic should avoid silently treating local wall-clock minutes as elapsed UTC minutes.
+Calendar operations include adding/subtracting working minutes and measuring working minutes between event times. Work intervals, holidays, and exceptions are applied using the project's configured timezone. Working windows are built as timezone-aware local datetimes and converted to UTC; arithmetic is performed on UTC instants, so daylight-saving transitions do not silently treat local wall-clock minutes as elapsed UTC minutes. Tests cover a spring-forward transition.
 
-## Resources and leveling
+Calendar validation requires an IANA timezone, all seven day keys (`mon` through `sun`), at least one working interval, `HH:MM` clock values, positive-duration intervals, and no overlaps. Exceptions are unique by date: a nonworking exception has no intervals, while a working exception replaces that date's weekly rule and needs at least one interval.
 
-Resource capacity and assignment units are compared over working intervals. Overload results identify the resource, interval, assigned load, capacity, and contributing tasks. A leveling preview preserves dependency and fixed-date constraints, ranks movable tasks by lower priority first, then larger available float, then stable task ID, and proposes changes for user acceptance. It is a heuristic, not an optimal solution.
+## Compact analytics
 
-## Risk simulation
+Status counts and completion percentage include milestones. Duration mean, median, and p90 exclude zero-duration milestones and use working-minute inputs. These statistics describe individual task durations, not elapsed project length or deadline confidence. Legacy uncertainty estimates are preserved but do not influence summary calculations or scheduling.
 
-Optimistic, most-likely, and pessimistic durations are explicit user inputs. The PERT mean is `(a + 4m + b) / 6`; beta-PERT sampling is the initial distribution. Tasks without estimate ranges remain deterministic. A run records its random seed, iteration count, target deadline, project version, and distribution settings. Report median/percentile finish dates and deadline-hit probability with the assumptions; results are planning estimates, not guarantees.
+## Decisions
 
-## Open decisions to confirm during requirements review
-
-- Whether workspace membership is mandatory or organization membership alone grants project access.
-- The exact roles and which actions each role may perform.
-- Whether task constraints are hard or advisory, and which constraint types ship first.
-- Whether users can choose project timezone and working intervals, or begin with a fixed weekday calendar.
-- Which Gantt interactions and library are required for the academic evaluation.
-- Whether password login is required for the first demo or a seeded local account is sufficient.
+Organization membership is the access boundary; roles remain owner/admin/editor/viewer. Gantt is read-only. Scheduling and summaries are computed on demand. There is no resource leveling or risk simulation in the current product.

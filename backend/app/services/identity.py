@@ -1,5 +1,4 @@
 import re
-from datetime import datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -72,11 +71,7 @@ def create_user(email, password, display_name) -> User:
     valid_password = validate_password(password)
     valid_display_name = validate_display_name(display_name)
 
-    user = User(
-        email=normalized_email,
-        display_name=valid_display_name,
-        email_verified_at=datetime.now(timezone.utc),
-    )
+    user = User(email=normalized_email, display_name=valid_display_name)
     user.set_password(valid_password)
     db.session.add(user)
 
@@ -128,11 +123,7 @@ def seed_demo_users(password: str) -> tuple[int, int]:
             skipped += 1
             continue
 
-        user = User(
-            email=email,
-            display_name=display_name,
-            email_verified_at=datetime.now(timezone.utc),
-        )
+        user = User(email=email, display_name=display_name)
         user.set_password(valid_password)
         db.session.add(user)
         created += 1

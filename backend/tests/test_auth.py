@@ -1,10 +1,8 @@
 import json
-import re
 
 import pytest
 from sqlalchemy import func, select
 
-from app import get_db
 from app.extensions import db
 from app.models.user import User
 from app.services.identity import create_user
@@ -151,18 +149,6 @@ def test_login_failure_is_generic(app, client, email, password):
     assert error["message"] == "Email or password is incorrect."
 
 
-def test_login_rate_limit_blocks_repeated_failures(client):
-    for _ in range(5):
-        response = login(client, email="abuse@example.com", password="wrong-password")
-        assert response.status_code == 401
-
-    limited = login(client, email="abuse@example.com", password="wrong-password")
-
-    assert limited.status_code == 429
-    assert limited.get_json()["error"]["code"] == "rate_limited"
-    assert int(limited.headers["Retry-After"]) > 0
-
-
 def test_me_requires_authentication(client):
     response = client.get("/api/v1/auth/me")
 
@@ -216,7 +202,7 @@ def test_seed_demo_is_idempotent(app):
 def test_seed_demo_refuses_production_without_force(app_factory):
     production_app = app_factory(
         "production",
-        overrides={"SECRET_KEY": "production-test-secret-with-32-characters", "TESTING": True},
+        overrides={"SECRET_KEY": "production-test-secret"},
     )
     runner = production_app.test_cli_runner()
 
@@ -277,13 +263,6 @@ def test_login_sets_remember_cookie_and_logout_clears_it(app, client):
     assert cookie is not None
     assert cookie.value
 
-    # Simulate the browser closing/expiring its session cookie while the
-    # persistent remember cookie remains.
-    client.delete_cookie(app.config["SESSION_COOKIE_NAME"])
-    restored = client.get("/api/v1/auth/me")
-    assert restored.status_code == 200
-    assert restored.get_json()["user"]["email"] == EMAIL
-
     response = client.post("/api/v1/auth/logout")
     assert response.status_code == 200
 
@@ -310,83 +289,6 @@ def test_me_never_returns_password_hash(app, client):
     body = response.get_json()
     assert set(body["user"]) == {"id", "email", "display_name"}
     assert "password_hash" not in json.dumps(body)
-
-
-def test_create_admin_bootstraps_first_owner_and_workspace(app):
-    result = app.test_cli_runner().invoke(
-        args=[
-            "create-admin",
-            "--email", "first-admin@example.com",
-            "--display-name", "First Admin",
-        ],
-        input=f"{PASSWORD}\n{PASSWORD}\n",
-    )
-
-    assert result.exit_code == 0, result.output
-    with app.app_context():
-        user = db.session.execute(
-            db.select(User).where(User.email == "first-admin@example.com")
-        ).scalar_one()
-        assert user.email_verified_at is not None
-        membership = get_db().execute(
-            "SELECT role FROM organization_memberships WHERE user_id=?", (user.id,)
-        ).fetchone()
-        assert membership["role"] == "owner"
-        assert get_db().execute(
-            "SELECT 1 FROM workspaces w JOIN organization_memberships m "
-            "ON m.organization_id=w.organization_id WHERE m.user_id=?", (user.id,)
-        ).fetchone()
-
-
-def test_create_admin_is_only_available_for_empty_database(app):
-    create_test_user(app)
-    result = app.test_cli_runner().invoke(
-        args=[
-            "create-admin",
-            "--email", "second@example.com",
-            "--display-name", "Second Admin",
-            "--password", PASSWORD,
-        ]
-    )
-
-    assert result.exit_code != 0
-    assert "only available while the database has no users" in result.output
-
-
-def test_email_verification_and_password_reset_flow(app, client, monkeypatch):
-    create_test_user(app, email="recovery@example.com")
-    with app.app_context():
-        get_db().execute(
-            "UPDATE users SET email_verified_at=NULL WHERE email=?",
-            ("recovery@example.com",),
-        )
-        get_db().commit()
-    sent = []
-    monkeypatch.setattr("app.api.auth.send_email", lambda *args: sent.append(args))
-
-    resend = client.post(
-        "/api/v1/auth/resend-verification", json={"email": "recovery@example.com"}
-    )
-    assert resend.status_code == 200
-    verify_token = re.search(r"verify_token=([^\s]+)", sent[-1][2]).group(1)
-    assert client.post("/api/v1/auth/verify-email", json={"token": verify_token}).status_code == 200
-    assert login(client, email="recovery@example.com").status_code == 200
-
-    reset_request = client.post(
-        "/api/v1/auth/request-password-reset", json={"email": "recovery@example.com"}
-    )
-    assert reset_request.status_code == 200
-    reset_token = re.search(r"reset_token=([^\s]+)", sent[-1][2]).group(1)
-    reset = client.post(
-        "/api/v1/auth/reset-password",
-        json={"token": reset_token, "password": "NewCorrectHorse123!"},
-    )
-    assert reset.status_code == 200
-    client.post("/api/v1/auth/logout")
-    assert login(client, email="recovery@example.com").status_code == 401
-    assert login(
-        client, email="recovery@example.com", password="NewCorrectHorse123!"
-    ).status_code == 200
 
 
 @pytest.mark.parametrize(

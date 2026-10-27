@@ -4,7 +4,12 @@ dist/
 .env.*
 !.env.example
 *.sqlite3
-/backups/
+*.sqlite3-*
 __pycache__/
 *.py[cod]
 .venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/

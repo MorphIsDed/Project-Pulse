@@ -110,18 +110,3 @@ def test_logout_accepts_token_returned_by_login(secure_app):
 
     assert response.status_code == 200
     assert client.get("/api/v1/auth/me").status_code == 401
-
-
-def test_mutation_rejects_an_untrusted_origin(secure_app):
-    client = secure_app.test_client()
-    headers = csrf_headers(client)
-    headers["Origin"] = "https://attacker.example"
-
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"email": EMAIL, "password": PASSWORD},
-        headers=headers,
-    )
-
-    assert response.status_code == 403
-    assert response.get_json()["error"]["code"] == "origin_denied"

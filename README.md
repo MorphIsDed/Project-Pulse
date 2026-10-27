@@ -2,23 +2,21 @@
 
 ProjectPulse is a local, browser-based project planning and analytics application for an academic project. It is designed for organizations that manage shared workspaces and project plans. The initial performance target is about 1,000 tasks per project; live co-editing is outside the first release.
 
-## What we are building
-
-The app combines a React + TypeScript frontend, a Flask JSON API, and a SQLite database in one modular monolith. The planned features are:
+## Features
 
 - Organizations, users, roles, workspaces, and shared projects.
-- Task and milestone management with dependencies and calendars.
-- Interactive Gantt planning and dependency-aware schedule recalculation.
-- Critical path, total float, and free float analysis.
-- Resource load and overload detection, plus an explainable leveling preview.
-- PERT/Monte Carlo deadline confidence estimates with reproducible seeds.
-- ICS calendar export.
+- Tasks, milestones, dependencies, and editable working calendars.
+- Read-only Gantt, dependency-aware scheduling, critical path, and float.
+- Compact project insights: pandas status aggregation and NumPy duration statistics.
+- ICS calendar export using Python's standard library.
 
-The detailed product scope, data model, rules, phases, and evaluation plan are in [plan.md](plan.md). Scheduling conventions are also recorded in [docs/scheduling-assumptions.md](docs/scheduling-assumptions.md), and the module design is in [docs/architecture.md](docs/architecture.md).
+The interface uses a top navigation bar and Tasks, Timeline, and Settings views, with system-controlled light/dark appearance, subtle glass surfaces, and responsive dialogs. Select a task to edit it and manage its dependencies. Organization/workspace management and member controls live in dialogs.
 
-## Current status
+## Current scope and compatibility
 
-The Flask API, SQLite database, and React interface are in place. Review [deployment guidance](docs/deployment.md) before production use.
+Resources, assignments, workload/leveling, risk simulation, invitations, notifications, and account export/deletion have been retired. Their endpoints and application services are removed. Existing database tables, migration history, and minimal ORM mappings remain intentionally intact; this cleanup does not erase existing records. Legacy task estimate fields remain supported by the API but are not used by the UI or summary.
+
+See [plan.md](plan.md), [architecture](docs/architecture.md), [API conventions](docs/api-conventions.md), [scheduling assumptions](docs/scheduling-assumptions.md), and [evaluation](docs/evaluation.md). A human user evaluation has not been conducted.
 
 ## Requirements
 
@@ -26,6 +24,8 @@ The Flask API, SQLite database, and React interface are in place. Review [deploy
 - Node.js and npm (use the current supported LTS release for development).
 - The packages listed in `requirements.txt` for the backend, analysis, export, and development checks.
 - Frontend packages listed in `frontend/package.json`.
+
+`requirements.txt` is the single source of dependency versions. `backend/pyproject.toml` holds tooling configuration only.
 
 ## Run locally on Windows PowerShell
 
@@ -35,22 +35,34 @@ From the project root:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-Start the Flask API from `backend` in that activated environment:
+Edit `.env` if needed, then initialize the database and start the Flask API from `backend`:
 
 ```powershell
 Set-Location backend
-flask --app wsgi db upgrade
-flask --app wsgi run --debug
+flask db upgrade
+flask seed-demo
+flask run --debug
 ```
 
-The health endpoint is [http://127.0.0.1:5000/api/v1/health](http://127.0.0.1:5000/api/v1/health).
+`flask seed-demo` is idempotent. It creates three demo accounts plus a demo organization, workspace, project, three tasks, and two finish-to-start dependencies. It prints how many users were created or skipped, then summarizes the demo tenant. The development defaults are:
+
+| Email | Role in the demo organization |
+| --- | --- |
+| `owner@demo.local` | owner |
+| `editor@demo.local` | editor |
+| `viewer@demo.local` | viewer |
+
+The demo password is `DemoPulse123!` unless `DEMO_PASSWORD` is set. The command refuses to run in production unless `--force` is passed.
+
+The health endpoint is [http://127.0.0.1:5000/api/v1/health](http://127.0.0.1:5000/api/v1/health). It returns `database: "ok"` when the API can reach SQLite.
 
 In a second terminal, install and start the frontend:
 
 ```powershell
-Set-Location "D:\Project Pulse\frontend"
+Set-Location frontend
 npm install
 npm run dev
 ```
@@ -59,18 +71,63 @@ Open the local URL printed by Vite. Vite forwards `/api` requests to the Flask d
 
 ## Configuration and data
 
-The SQLite database is stored under `backend/instance/` during local development. Do not commit database files, password hashes from real accounts, environment files, or production secrets. Production runs with `docker compose` and requires a unique `PROJECTPULSE_SECRET_KEY`, `APP_DOMAIN`, and an encrypted persistent `BACKUP_PATH`; the stack configures allowed origins and secure cookies. See [docs/deployment.md](docs/deployment.md). The Flask development server is for local development only.
+Configuration comes from `backend/.flaskenv` (Flask app selection) and the root `.env` file (secrets and environment).
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `SECRET_KEY` | Flask session signing key | development fallback |
+| `DATABASE_URL` | SQLAlchemy database URI | `sqlite:///projectpulse.sqlite3` |
+| `APP_ENV` | `development`, `testing`, or `production` | `development` |
+| `ALLOW_PUBLIC_SIGNUP` | Enables public registration when true | `false` |
+| `DEMO_PASSWORD` | Password assigned by `flask seed-demo` | `DemoPulse123!` |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO` |
+
+A relative SQLite path resolves under `backend/instance/`. Keep `.env` and database files out of source control. The Flask development server is for local development only.
+
+## Database migrations
+
+Schema changes are managed with Flask-Migrate/Alembic. Run all commands from `backend` with the virtual environment active:
+
+```powershell
+flask db upgrade          # apply migrations
+flask db revision -m "..."  # create an empty revision
+flask db migrate -m "..."   # autogenerate from model changes (review it)
+flask db downgrade        # step back one revision
+```
+
+Review autogenerated migrations before committing them. SQLite is configured with batch mode for `ALTER` operations.
+
+## Tests
+
+Backend tests use an isolated temporary SQLite database and never touch `backend/instance/`:
+
+```powershell
+Set-Location backend
+pytest
+```
+
+Frontend tests use Vitest, jsdom, and React Testing Library; they run without a backend:
+
+```powershell
+Set-Location frontend
+npm test
+npm run test:coverage
+npm run build
+```
+
+CI runs both suites, applies migrations against a fresh database to catch model/migration drift, and runs `flask seed-demo` to exercise the idempotent demo tenant.
+
+The scheduling and summary benchmark is reproducible from `backend`:
+
+```powershell
+..\.venv\Scripts\python.exe -m scripts.benchmark --runs 5
+```
 
 ## Development notes
 
 - Keep scheduling and analytics logic independent of Flask request state.
-- Use transactions for related writes and check project versions for stale edits.
-- Enforce tenant membership on every project read and mutation.
+- Use SQLAlchemy transactions for related writes and check project versions for stale edits.
+- Enforce organization membership and role rules on every workspace, project, task, and dependency read or mutation.
 - Keep schedule inputs separate from derived dates.
 - Document any change to date, calendar, dependency, or simulation assumptions.
 - Build features in the order and acceptance criteria in `plan.md`.
-## Account, privacy, and team controls
-
-Accounts require email verification. Password recovery links and team invitations are sent through the SMTP settings in `.env`. Configure a real SMTP host, sender, operator contact, support address, hosting location, retention period, and deletion process before deployment; the production API refuses placeholder legal details. Optional Sentry reporting is enabled by setting `PROJECTPULSE_SENTRY_DSN`.
-
-Signed-in users can export account data and delete their account from Settings. Workspace admins can invite members as admins or members. Owners and admins manage invitations and project calendars; members can access project work. Task owner changes generate in-app notifications. Calendar working weekdays and holidays are applied to project schedule calculations, and schedule timestamps include the configured time zone.

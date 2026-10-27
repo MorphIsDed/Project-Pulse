@@ -10,7 +10,7 @@ PROJECT_ROOT = BACKEND_DIR.parent
 load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(BACKEND_DIR / ".env")
 
-DEVELOPMENT_SECRET = "development-only-change-me"  # nosec B105 — rejected by production startup validation.
+DEVELOPMENT_SECRET = "development-only-change-me"
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -39,8 +39,13 @@ class Config:
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
 
+<<<<<<< HEAD
     ALLOW_PUBLIC_SIGNUP = env_bool("ALLOW_PUBLIC_SIGNUP", True)
     DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "DemoPulse123!")  # nosec B105 — demo-only seed account; disabled in production docs.
+=======
+    ALLOW_PUBLIC_SIGNUP = env_bool("ALLOW_PUBLIC_SIGNUP", False)
+    DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "DemoPulse123!")
+>>>>>>> bb8b5819780a204a93d4a7baf3a81d69b145293a
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
     PROPAGATE_EXCEPTIONS = False
@@ -54,7 +59,7 @@ class DevelopmentConfig(Config):
 class TestingConfig(Config):
     APP_ENV = "testing"
     TESTING = True
-    SECRET_KEY = "testing-secret"  # nosec B105 — test application only.
+    SECRET_KEY = "testing-secret"
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     WTF_CSRF_ENABLED = False
     LOG_LEVEL = "WARNING"

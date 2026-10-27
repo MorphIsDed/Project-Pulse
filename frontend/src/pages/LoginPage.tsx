@@ -41,12 +41,8 @@ export default function LoginPage({ health, status }: LoginPageProps) {
 
   return (
     <section className="auth">
-      <p className="eyebrow">SIGN IN</p>
-      <h1>
-        Pick up
-        <br />
-        <em>where you left off.</em>
-      </h1>
+      <p className="eyebrow">Sign in</p>
+      <h1>Welcome back.</h1>
       <p className="intro">
         Use a seeded demo account to explore the planning workspace.
       </p>

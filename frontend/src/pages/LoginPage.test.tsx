@@ -36,7 +36,7 @@ describe("layout", () => {
     const { container } = renderPage();
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      /pick up/i,
+      /welcome back/i,
     );
 
     const email = screen.getByLabelText("Email");

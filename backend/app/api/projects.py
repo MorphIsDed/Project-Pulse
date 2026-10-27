@@ -1,212 +1,117 @@
-import sqlite3
-from datetime import date
-from flask import Blueprint, jsonify, request, session
-from app import get_db
+from flask import Blueprint, jsonify
+from flask_login import current_user, login_required
+
+from app.api.validation import json_body, pagination_args
+from app.services.planning import (
+    create_project,
+    delete_project,
+    get_calendar,
+    list_projects,
+    update_project,
+)
+from app.services.scheduling import update_calendar
+from app.services.tenancy import (
+    EDIT_ROLES,
+    MANAGE_ROLES,
+    require_project_membership,
+    require_workspace_membership,
+)
+
+projects_api = Blueprint("projects_api", __name__, url_prefix="/api/v1")
 
 
-projects_api = Blueprint("projects_api", __name__)
-
-
-def get_workspace_membership(workspace_id: int, user_id: int):
-    return get_db().execute(
-        """
-        SELECT m.role
-        FROM workspaces AS w
-        JOIN organization_memberships AS m
-          ON m.organization_id = w.organization_id
-        WHERE w.id = ? AND m.user_id = ?
-        """,
-        (workspace_id, user_id),
-    ).fetchone()
-
-
-@projects_api.get("/api/v1/workspaces/<int:workspace_id>/projects")
-def list_projects(workspace_id):
-    user_id = session.get("user_id")
-
-    if user_id is None:
-        return jsonify(
-            error={"code": "not_authenticated", "message": "Please log in."}
-        ), 401
-
-    if get_workspace_membership(workspace_id, user_id) is None:
-        return jsonify(
-            error={"code": "not_found", "message": "Workspace not found."}
-        ), 404
-
-    rows = get_db().execute(
-        """
-        SELECT id, workspace_id, name, status, start_date, target_finish,
-               version, created_by, created_at, updated_at
-        FROM projects
-        WHERE workspace_id = ?
-        ORDER BY name
-        """,
-        (workspace_id,),
-    ).fetchall()
-
+@projects_api.get("/workspaces/<int:workspace_id>/projects")
+@login_required
+def get_projects(workspace_id):
+    _workspace, membership = require_workspace_membership(
+        workspace_id, current_user.id
+    )
+    limit, offset = pagination_args()
+    projects = list_projects(
+        workspace_id, membership.role, limit, offset
+    )
     return jsonify(
-        projects=[
-            {
-                "id": row["id"],
-                "workspace_id": row["workspace_id"],
-                "name": row["name"],
-                "status": row["status"],
-                "start_date": row["start_date"],
-                "target_finish": row["target_finish"],
-                "version": row["version"],
-                "created_by": row["created_by"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            }
-            for row in rows
-        ]
-    ), 200
+        projects=projects,
+        limit=limit,
+        offset=offset,
+    )
 
 
-@projects_api.post("/api/v1/workspaces/<int:workspace_id>/projects")
-def create_project(workspace_id):
-    user_id = session.get("user_id")
-
-    if user_id is None:
-        return jsonify(
-            error={"code": "not_authenticated", "message": "Please log in."}
-        ), 401
-
-    membership = get_workspace_membership(workspace_id, user_id)
-
-    if membership is None:
-        return jsonify(
-            error={"code": "not_found", "message": "Workspace not found."}
-        ), 404
-
-    if membership["role"] not in ("owner", "admin"):
-        return jsonify(
-            error={"code": "forbidden", "message": "Only owners and admins can create projects."}
-        ), 403
-
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return jsonify(
-            error={"code": "invalid_json", "message": "Send a JSON object."}
-        ), 400
-
-    name = data.get("name")
-
-    if not isinstance(name, str) or not name.strip():
-        return jsonify(
-            error={"code": "invalid_name", "message": "Project name is required."}
-        ), 400
-
-    name = name.strip()
-
-    if len(name) > 120:
-        return jsonify(
-            error={"code": "invalid_name", "message": "Name must be 120 characters or fewer."}
-        ), 400
-
-    db = get_db()
-
-    try:
-        cursor = db.execute(
-            """
-            INSERT INTO projects (workspace_id, name, created_by)
-            VALUES (?, ?, ?)
-            """,
-            (workspace_id, name, user_id),
-        )
-        db.commit()
-    except sqlite3.IntegrityError:
-        db.rollback()
-        return jsonify(
-            error={
-                "code": "project_conflict",
-                "message": "A project with that name may already exist in this workspace.",
-            }
-        ), 409
-
+@projects_api.post("/workspaces/<int:workspace_id>/projects")
+@login_required
+def post_project(workspace_id):
+    workspace, membership = require_workspace_membership(
+        workspace_id, current_user.id, EDIT_ROLES
+    )
+    data = json_body()
+    project = create_project(workspace, current_user.id, data)
     return jsonify(
-        project={
-            "id": cursor.lastrowid,
-            "workspace_id": workspace_id,
-            "name": name,
-            "status": "active",
-            "start_date": None,
-            "target_finish": None,
-            "version": 1,
-            "created_by": user_id,
-        }
+        project=project.to_dict(role=membership.role)
     ), 201
 
 
-@projects_api.patch("/api/v1/projects/<int:project_id>")
-def update_project(project_id):
-    user_id = session.get("user_id")
-    if user_id is None:
-        return jsonify(error={"code": "not_authenticated", "message": "Please log in."}), 401
-
-    row = get_db().execute(
-        """SELECT p.*, m.role FROM projects p
-           JOIN workspaces w ON w.id = p.workspace_id
-           JOIN organization_memberships m ON m.organization_id = w.organization_id
-           WHERE p.id = ? AND m.user_id = ?""",
-        (project_id, user_id),
-    ).fetchone()
-    if row is None:
-        return jsonify(error={"code": "not_found", "message": "Project not found."}), 404
-    if row["role"] not in ("owner", "admin"):
-        return jsonify(error={"code": "forbidden", "message": "Only owners and admins can update project settings."}), 403
-
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict) or not data:
-        return jsonify(error={"code": "invalid_json", "message": "Send project fields as a JSON object."}), 400
-    expected_version = data.pop("version", None)
-    if expected_version is not None and (type(expected_version) is not int or expected_version != row["version"]):
-        return jsonify(error={"code": "stale_project", "message": "The project changed since it was loaded. Refresh and try again."}), 409
-
-    updates = {}
-    if "name" in data:
-        name = data["name"]
-        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 120:
-            return jsonify(error={"code": "invalid_name", "message": "Project name is required (120 characters max)."}), 400
-        updates["name"] = name.strip()
-    if "status" in data:
-        if data["status"] not in ("active", "on_hold", "completed", "archived"):
-            return jsonify(error={"code": "invalid_status", "message": "Choose active, on_hold, completed, or archived."}), 400
-        updates["status"] = data["status"]
-    for field in ("start_date", "target_finish"):
-        if field in data:
-            value = data[field]
-            if value in (None, ""):
-                updates[field] = None
-            elif not isinstance(value, str):
-                return jsonify(error={"code": "invalid_date", "message": f"{field} must be an ISO date."}), 400
-            else:
-                try:
-                    date.fromisoformat(value)
-                except ValueError:
-                    return jsonify(error={"code": "invalid_date", "message": f"{field} must use YYYY-MM-DD."}), 400
-                updates[field] = value
-    if not updates:
-        return jsonify(error={"code": "empty_update", "message": "Include a supported project field to update."}), 400
-    if updates.get("start_date", row["start_date"]) and updates.get("target_finish", row["target_finish"]):
-        if updates.get("target_finish", row["target_finish"]) < updates.get("start_date", row["start_date"]):
-            return jsonify(error={"code": "invalid_date_range", "message": "Target finish must be on or after the project start date."}), 400
-
-    assignments = ", ".join(f"{field} = ?" for field in updates)
-    values = list(updates.values())
-    values.extend((project_id, row["version"]))
-    cursor = get_db().execute(
-        f"UPDATE projects SET {assignments}, version = version + 1 WHERE id = ? AND version = ?",
-        values,
+@projects_api.get("/projects/<int:project_id>")
+@login_required
+def get_project(project_id):
+    project, membership = require_project_membership(
+        project_id, current_user.id
     )
-    if cursor.rowcount == 0:
-        get_db().rollback()
-        return jsonify(error={"code": "stale_project", "message": "The project changed since it was loaded. Refresh and try again."}), 409
-    get_db().commit()
-    updated = get_db().execute(
-        "SELECT id, workspace_id, name, status, start_date, target_finish, version, created_at, updated_at FROM projects WHERE id = ?",
-        (project_id,),
-    ).fetchone()
-    return jsonify(project=dict(updated)), 200
+    return jsonify(
+        project=project.to_dict(role=membership.role)
+    )
+
+
+@projects_api.patch("/projects/<int:project_id>")
+@login_required
+def patch_project(project_id):
+    project, membership = require_project_membership(
+        project_id, current_user.id, EDIT_ROLES
+    )
+    data = json_body()
+    project = update_project(project, data)
+    return jsonify(
+        project=project.to_dict(role=membership.role)
+    )
+
+
+@projects_api.delete("/projects/<int:project_id>")
+@login_required
+def delete_project_route(project_id):
+    project, _membership = require_project_membership(
+        project_id, current_user.id, MANAGE_ROLES
+    )
+    delete_project(project)
+    return "", 204
+
+
+@projects_api.get("/projects/<int:project_id>/calendar")
+@login_required
+def get_project_calendar(project_id):
+    project, _membership = require_project_membership(
+        project_id, current_user.id
+    )
+    calendar = get_calendar(project)
+    return jsonify(calendar=calendar.to_dict())
+
+
+@projects_api.patch("/projects/<int:project_id>/calendar")
+@login_required
+def patch_project_calendar(project_id):
+    project, membership = require_project_membership(
+        project_id, current_user.id, EDIT_ROLES
+    )
+    data = json_body()
+    calendar, project = update_calendar(project, data)
+    return jsonify(
+        calendar=calendar.to_dict(),
+        project=project.to_dict(role=membership.role),
+    )
+
+
+@projects_api.get("/projects/<int:project_id>/summary")
+@login_required
+def get_project_summary(project_id):
+    from app.services.summary import project_summary
+
+    project, _membership = require_project_membership(project_id, current_user.id)
+    return jsonify(summary=project_summary(project))

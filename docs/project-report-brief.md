@@ -1,31 +1,26 @@
-# ProjectPulse Report Brief
+# Project report brief
 
-This document is a source pack for writing a detailed academic report about ProjectPulse. It separates what is actually implemented from what is planned, and it deliberately includes the modules that are **not** implemented so the report does not overstate the project.
+## Purpose and implemented modules
 
-- Repository: <https://github.com/MorphIsDed/Project-Pulse>
-- Branch: `main`
-- Snapshot commit: `871f918` (`Merge branch 'feat/m1-identity' into main`)
-- Snapshot date: 2026-10-26
-- Purpose: implementation evidence, architecture notes, test evidence, limitations, and a suggested report structure.
+ProjectPulse is a local academic planning application: React/TypeScript frontend, Flask API, SQLite persistence, pandas status aggregation, and NumPy duration statistics. Its core contribution is dependency-aware scheduling with working calendars, CPM/float, and a read-only Gantt, supported by project/task management and compact descriptive analytics.
 
-> **Most important caution:** the repository contains files for organizations, workspaces, projects, tasks, and analytics, but those files are **not wired into the running application** and are not backed by current models, migrations, or tests. They must be described as dormant/unintegrated code, not as implemented features. See [Dormant and unintegrated code](#10-dormant-and-unintegrated-code).
+Authentication uses cookie sessions and CSRF; organization membership controls owner/admin/editor/viewer access. The UI uses focused Tasks, Timeline, and Settings views, management dialogs, a responsive top navigation, and system light/dark appearance. ICS export is implemented using standard Python.
 
-> **Historical snapshot notice:** this brief describes commit `871f918` from October 26, 2026. It predates the subsequent P0–P4 implementation and is not an accurate status report for the current `main` branch. Use [README.md](../README.md), [deployment guidance](deployment.md), [architecture](architecture.md), and the live source/tests for current behavior. The snapshot details below are retained only as history for the academic report.
+## Analytics interpretation
 
----
+Completion percentage counts completed tasks, including milestones, rather than weighting by duration or averaging progress. pandas groups task statuses. NumPy calculates mean, median, and p90 duration over positive-duration tasks. These are descriptive task statistics, not project-duration predictions. Empty and milestone-only projects have null duration statistics.
 
-## 1. How to use this brief
+## Retired modules and compatibility
 
-Use this document in three ways:
+Resource/assignment management, overload/leveling, risk simulation, invitations, notifications, and account export/deletion are removed. Existing legacy tables, schema migrations, and estimate fields are retained to preserve databases. The old unregistered analytics prototype is deleted. Do not describe retired modules as active features.
 
-1. Copy verified facts and file references into the report.
-2. Use the module status tables to separate completed work from future work.
-3. Use the suggested report outline in [Section 14](#14-suggested-report-outline) to structure the final document.
+## Evidence and limits
 
-The brief is intentionally explicit about evidence. A feature is counted as implemented only when it is wired into the active Flask app, has a current data model/migration where needed, and has tests or a documented manual verification path.
+Use docs/evaluation.md for current test and benchmark evidence, docs/api-conventions.md for supported interfaces, and docs/scheduling-assumptions.md for schedule rules. The Gantt is read-only; SQLite is the supported database; calendar UI supports one interval per day while the API supports multiple intervals/exceptions. No human user study or production deployment validation is claimed.
 
-Status labels used in this document:
+## Suggested report structure
 
+<<<<<<< HEAD
 | Label | Meaning |
 | --- | --- |
 | Implemented | Active in the running application and supported by tests or documented verification. |
@@ -766,3 +761,12 @@ The following structure maps directly to the evidence in this repository.
 - [ ] Include limitations, open decisions, and future work.
 - [ ] Use the suggested outline and figures, adapting them to the course requirements.
 - [ ] Cite the repository snapshot exactly: `main` at `871f918`.
+=======
+1. Problem and academic objectives.
+2. Current functional requirements and roles.
+3. Architecture, active schema, and compatibility storage.
+4. Calendar arithmetic, dependency graph, CPM, and float.
+5. pandas/NumPy descriptive analytics and edge cases.
+6. Responsive interface and accessible interaction design.
+7. Automated testing, measured performance, and limitations.
+>>>>>>> bb8b5819780a204a93d4a7baf3a81d69b145293a
