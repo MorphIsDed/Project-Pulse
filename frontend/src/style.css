@@ -79,8 +79,10 @@ footer { padding: 22px 0; border-top: 1px solid #dce3df; color: #829087; font-si
 .dependency-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #edf1ee; font-size: 13px; }
 .dependency-row:last-child { border-bottom: 0; }
 .dependency-row button { padding: 7px 9px; font-size: 11px; }
-.schedule-panel, .calendar-panel { padding: 18px; border: 1px solid #e3e9e5; border-radius: 12px; background: #fbfcfb; display: grid; gap: 14px; }
-.schedule-panel h3, .calendar-panel h3 { margin: 0; font-size: 17px; letter-spacing: -.03em; }
+.schedule-panel, .calendar-panel, .resource-panel { padding: 18px; border: 1px solid #e3e9e5; border-radius: 12px; background: #fbfcfb; display: grid; gap: 14px; }
+.schedule-panel h3, .calendar-panel h3, .resource-panel h3 { margin: 0; font-size: 17px; letter-spacing: -.03em; }
+.leveling-preview { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid #edf1ee; }
+.leveling-preview h4 { margin: 0; font-size: 14px; }
 .schedule-meta { margin: 0; font-size: 13px; font-weight: 700; }
 .schedule-warnings { margin: 0; padding: 10px 12px 10px 28px; border-radius: 8px; background: #fff7e4; color: #7a5a1f; font-size: 12px; }
 .schedule-table-wrap { overflow-x: auto; }

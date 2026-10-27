@@ -391,8 +391,16 @@ def get_leveling_preview(project) -> dict:
                 candidate_excess = candidate_workload["summary"][
                     "excess_work_minutes"
                 ]
+                target_finish = (
+                    project.target_finish.isoformat()
+                    if project.target_finish is not None
+                    else None
+                )
                 if (
-                    candidate_schedule["project_finish"] > initial_finish
+                    (
+                        target_finish is not None
+                        and candidate_schedule["project_finish"] > target_finish
+                    )
                     or candidate_excess >= workload["summary"][
                         "excess_work_minutes"
                     ]

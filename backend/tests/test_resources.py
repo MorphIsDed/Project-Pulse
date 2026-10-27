@@ -259,7 +259,7 @@ def test_leveling_preview_delays_lower_priority_task_without_persisting(app):
     assert proposal["task_id"] == lower["id"]
     assert proposal["proposed_start"] == "2026-01-06"
     assert proposal["proposed_constraint_type"] == "start_no_earlier_than"
-    assert preview["after"]["project_finish"] == "2026-01-05"
+    assert preview["after"]["project_finish"] == "2026-01-06"
 
     schedule = client.get(
         f"/api/v1/projects/{project['id']}/schedule"

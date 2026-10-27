@@ -26,6 +26,16 @@ const apiMocks = vi.hoisted(() => ({
   getProjectCalendar: vi.fn(),
   getProjectSchedule: vi.fn(),
   updateProjectCalendar: vi.fn(),
+  listResources: vi.fn(),
+  listAssignments: vi.fn(),
+  getProjectWorkload: vi.fn(),
+  getLevelingPreview: vi.fn(),
+  createResource: vi.fn(),
+  updateResource: vi.fn(),
+  deleteResource: vi.fn(),
+  createAssignment: vi.fn(),
+  updateAssignment: vi.fn(),
+  deleteAssignment: vi.fn(),
   createOrganization: vi.fn(),
   createWorkspace: vi.fn(),
   createProject: vi.fn(),
@@ -200,6 +210,37 @@ function stubOwnerProject() {
   apiMocks.listDependencies.mockResolvedValue([dependency]);
   apiMocks.getProjectCalendar.mockResolvedValue(calendar);
   apiMocks.getProjectSchedule.mockResolvedValue(schedule);
+  apiMocks.listResources.mockResolvedValue([]);
+  apiMocks.listAssignments.mockResolvedValue([]);
+  apiMocks.getProjectWorkload.mockResolvedValue({
+    resources: [],
+    overloads: [],
+    summary: {
+      resource_count: 0,
+      assignment_count: 0,
+      load_day_count: 0,
+      overload_count: 0,
+      overloaded_resource_count: 0,
+      excess_work_minutes: 0,
+    },
+  });
+  apiMocks.getLevelingPreview.mockResolvedValue({
+    project_id: 100,
+    project_version: 1,
+    before: {
+      excess_work_minutes: 0,
+      overload_count: 0,
+      project_finish: "2026-01-10",
+    },
+    after: {
+      excess_work_minutes: 0,
+      overload_count: 0,
+      project_finish: "2026-01-10",
+    },
+    proposals: [],
+    remaining_overloads: [],
+    notes: ["No overloads detected."],
+  });
 }
 
 beforeEach(() => {

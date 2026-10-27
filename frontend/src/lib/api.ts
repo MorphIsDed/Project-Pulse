@@ -159,6 +159,101 @@ export type ProjectSchedule = {
   warnings: ScheduleWarning[];
 };
 
+export type Resource = {
+  id: number;
+  project_id: number;
+  name: string;
+  role: string;
+  capacity_work_minutes_per_day: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Assignment = {
+  id: number;
+  project_id: number;
+  resource_id: number;
+  task_id: number;
+  allocation_percent: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkloadLoadDay = {
+  date: string;
+  assigned_work_minutes: number;
+  load_percent: number;
+  overloaded: boolean;
+};
+
+export type WorkloadResource = {
+  resource_id: number;
+  resource_name: string;
+  capacity_work_minutes_per_day: number;
+  total_assigned_work_minutes: number;
+  load_days: WorkloadLoadDay[];
+  overloaded_dates: string[];
+};
+
+export type WorkloadTaskContribution = {
+  task_id: number;
+  task_name: string;
+  task_priority: number;
+  allocation_percent: number;
+  allocated_work_minutes: number;
+};
+
+export type WorkloadOverload = {
+  resource_id: number;
+  resource_name: string;
+  date: string;
+  assigned_work_minutes: number;
+  capacity_work_minutes: number;
+  excess_work_minutes: number;
+  load_percent: number;
+  tasks: WorkloadTaskContribution[];
+};
+
+export type ProjectWorkload = {
+  resources: WorkloadResource[];
+  overloads: WorkloadOverload[];
+  summary: {
+    resource_count: number;
+    assignment_count: number;
+    load_day_count: number;
+    overload_count: number;
+    overloaded_resource_count: number;
+    excess_work_minutes: number;
+  };
+};
+
+export type LevelingProposal = {
+  resource_id: number;
+  resource_name: string;
+  task_id: number;
+  task_name: string;
+  proposed_start: string;
+  proposed_constraint_type: ConstraintType;
+};
+
+export type LevelingPreview = {
+  project_id: number;
+  project_version: number;
+  before: {
+    excess_work_minutes: number;
+    overload_count: number;
+    project_finish: string;
+  };
+  after: {
+    excess_work_minutes: number;
+    overload_count: number;
+    project_finish: string;
+  };
+  proposals: LevelingProposal[];
+  remaining_overloads: WorkloadOverload[];
+  notes: string[];
+};
+
 export type ProjectCreate = {
   name: string;
   start_date?: string | null;
@@ -636,4 +731,112 @@ export async function deleteDependency(
     `/projects/${projectId}/dependencies/${dependencyId}`,
     { method: "DELETE" },
   );
+}
+
+
+export async function listResources(projectId: number): Promise<Resource[]> {
+  const body = await request<{ resources: Resource[] }>(
+    `/projects/${projectId}/resources?limit=100`,
+  );
+  return body.resources;
+}
+
+export async function createResource(
+  projectId: number,
+  payload: {
+    name: string;
+    role?: string;
+    capacity_work_minutes_per_day?: number;
+  },
+): Promise<{ resource: Resource; project_version: number }> {
+  return request<{ resource: Resource; project_version: number }>(
+    `/projects/${projectId}/resources`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function updateResource(
+  projectId: number,
+  resourceId: number,
+  payload: {
+    name?: string;
+    role?: string;
+    capacity_work_minutes_per_day?: number;
+  },
+): Promise<{ resource: Resource; project_version: number }> {
+  return request<{ resource: Resource; project_version: number }>(
+    `/projects/${projectId}/resources/${resourceId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export async function deleteResource(
+  projectId: number,
+  resourceId: number,
+): Promise<void> {
+  await request<void>(`/projects/${projectId}/resources/${resourceId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listAssignments(
+  projectId: number,
+): Promise<Assignment[]> {
+  const body = await request<{ assignments: Assignment[] }>(
+    `/projects/${projectId}/assignments?limit=100`,
+  );
+  return body.assignments;
+}
+
+export async function createAssignment(
+  projectId: number,
+  payload: {
+    resource_id: number;
+    task_id: number;
+    allocation_percent?: number;
+  },
+): Promise<{ assignment: Assignment; project_version: number }> {
+  return request<{ assignment: Assignment; project_version: number }>(
+    `/projects/${projectId}/assignments`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function updateAssignment(
+  projectId: number,
+  assignmentId: number,
+  payload: { allocation_percent: number },
+): Promise<{ assignment: Assignment; project_version: number }> {
+  return request<{ assignment: Assignment; project_version: number }>(
+    `/projects/${projectId}/assignments/${assignmentId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+  );
+}
+
+export async function deleteAssignment(
+  projectId: number,
+  assignmentId: number,
+): Promise<void> {
+  await request<void>(
+    `/projects/${projectId}/assignments/${assignmentId}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function getProjectWorkload(
+  projectId: number,
+): Promise<ProjectWorkload> {
+  const body = await request<{ workload: ProjectWorkload }>(
+    `/projects/${projectId}/workload`,
+  );
+  return body.workload;
+}
+
+export async function getLevelingPreview(
+  projectId: number,
+): Promise<LevelingPreview> {
+  const body = await request<{ preview: LevelingPreview }>(
+    `/projects/${projectId}/leveling-preview`,
+  );
+  return body.preview;
 }

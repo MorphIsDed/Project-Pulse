@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import GanttChart from "../components/GanttChart";
+import ResourceWorkloadPanel from "../components/ResourceWorkloadPanel";
 import {
   ApiError,
   addMember,
@@ -1196,6 +1197,13 @@ export default function WorkspacePage() {
               )}
             </section>
           ) : null}
+
+          <ResourceWorkloadPanel
+            projectId={project.id}
+            tasks={tasks}
+            canEdit={canEditPlanning}
+            refreshKey={projectRefresh}
+          />
 
           <div className="project-sections">
             <section>
