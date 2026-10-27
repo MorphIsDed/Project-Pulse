@@ -42,6 +42,13 @@ class Config:
     ALLOW_PUBLIC_SIGNUP = env_bool("ALLOW_PUBLIC_SIGNUP", False)
     DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "DemoPulse123!")
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+    PUBLIC_URL = os.environ.get("PUBLIC_URL", "http://localhost:5173")
+    MAIL_HOST = os.environ.get("MAIL_HOST")
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
+    MAIL_FROM = os.environ.get("MAIL_FROM")
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+    MAIL_USE_TLS = env_bool("MAIL_USE_TLS", True)
 
     PROPAGATE_EXCEPTIONS = False
 

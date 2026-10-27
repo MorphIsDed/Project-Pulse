@@ -3,6 +3,7 @@
 Import model modules here so Alembic autogenerate can discover their tables.
 """
 
+from app.models.collaboration import Notification, WorkspaceInvitation
 from app.models.planning import (
     Dependency,
     Project,
@@ -20,6 +21,7 @@ from app.models.user import User
 __all__ = [
     "Assignment",
     "Dependency",
+    "Notification",
     "Organization",
     "OrganizationMembership",
     "Project",
@@ -28,4 +30,5 @@ __all__ = [
     "Task",
     "User",
     "Workspace",
+    "WorkspaceInvitation",
 ]

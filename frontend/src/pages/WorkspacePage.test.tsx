@@ -36,6 +36,14 @@ const apiMocks = vi.hoisted(() => ({
   createAssignment: vi.fn(),
   updateAssignment: vi.fn(),
   deleteAssignment: vi.fn(),
+  listNotifications: vi.fn(),
+  listInvitations: vi.fn(),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+  createInvitation: vi.fn(),
+  revokeInvitation: vi.fn(),
+  acceptInvitation: vi.fn(),
+  deleteAccount: vi.fn(),
   createOrganization: vi.fn(),
   createWorkspace: vi.fn(),
   createProject: vi.fn(),
@@ -224,6 +232,8 @@ function stubOwnerProject() {
       excess_work_minutes: 0,
     },
   });
+  apiMocks.listNotifications.mockResolvedValue([]);
+  apiMocks.listInvitations.mockResolvedValue([]);
   apiMocks.getLevelingPreview.mockResolvedValue({
     project_id: 100,
     project_version: 1,

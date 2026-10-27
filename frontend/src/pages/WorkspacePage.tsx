@@ -1,7 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 
+import AccountPanel from "../components/AccountPanel";
 import GanttChart from "../components/GanttChart";
+import InvitationPanel from "../components/InvitationPanel";
+import NotificationPanel from "../components/NotificationPanel";
 import ResourceWorkloadPanel from "../components/ResourceWorkloadPanel";
+import RiskSimulationPanel from "../components/RiskSimulationPanel";
 import {
   ApiError,
   addMember,
@@ -908,8 +912,18 @@ export default function WorkspacePage() {
                   </button>
                 </form>
               ) : null}
+              <InvitationPanel
+                organizationId={organization.id}
+                canManage={canManageTenant}
+                onAccepted={(organizationId) =>
+                  setOrganizationId(organizationId)
+                }
+              />
             </section>
           ) : null}
+
+          <NotificationPanel refreshKey={projectRefresh} />
+          <AccountPanel />
         </div>
 
         <div className="workspace-column">
@@ -1108,13 +1122,21 @@ export default function WorkspacePage() {
                   and the working calendar.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setProjectRefresh((current) => current + 1)}
-                disabled={busy}
-              >
-                Refresh schedule
-              </button>
+              <div className="panel-actions">
+                <a
+                  className="button-link"
+                  href={`/api/v1/projects/${project.id}/export.ics`}
+                >
+                  Export ICS
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setProjectRefresh((current) => current + 1)}
+                  disabled={busy}
+                >
+                  Refresh schedule
+                </button>
+              </div>
             </div>
             {scheduleError ? (
               <p className="form-error" role="status">
@@ -1203,6 +1225,11 @@ export default function WorkspacePage() {
             tasks={tasks}
             canEdit={canEditPlanning}
             refreshKey={projectRefresh}
+          />
+
+          <RiskSimulationPanel
+            projectId={project.id}
+            canRun={canEditPlanning}
           />
 
           <div className="project-sections">

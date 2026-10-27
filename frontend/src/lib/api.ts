@@ -254,6 +254,56 @@ export type LevelingPreview = {
   notes: string[];
 };
 
+export type RiskTask = {
+  task_id: number;
+  task_name: string;
+  duration_work_minutes: number;
+  estimates: {
+    optimistic: number;
+    most_likely: number;
+    pessimistic: number;
+  } | null;
+  p10_work_minutes: number;
+  p50_work_minutes: number;
+  p90_work_minutes: number;
+  critical_frequency: number;
+};
+
+export type RiskSimulation = {
+  project_id: number;
+  project_version: number;
+  iterations: number;
+  seed: number;
+  target_finish: string | null;
+  deterministic_finish: string;
+  finish_percentiles: Record<string, string>;
+  target_probability: number | null;
+  tasks: RiskTask[];
+  warnings: ScheduleWarning[];
+  assumptions: string[];
+};
+
+export type Notification = {
+  id: number;
+  organization_id: number | null;
+  project_id: number | null;
+  task_id: number | null;
+  kind: string;
+  message: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type Invitation = {
+  id: number;
+  organization_id: number;
+  email: string;
+  role: Exclude<Role, "owner">;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+};
+
 export type ProjectCreate = {
   name: string;
   start_date?: string | null;
@@ -839,4 +889,92 @@ export async function getLevelingPreview(
     `/projects/${projectId}/leveling-preview`,
   );
   return body.preview;
+}
+
+
+export async function runRiskSimulation(
+  projectId: number,
+  payload: { iterations?: number; seed?: number } = {},
+): Promise<RiskSimulation> {
+  const body = await request<{ simulation: RiskSimulation }>(
+    `/projects/${projectId}/risk-simulation`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+  return body.simulation;
+}
+
+
+export async function listNotifications(): Promise<Notification[]> {
+  const body = await request<{ notifications: Notification[] }>(
+    "/notifications?limit=100",
+  );
+  return body.notifications;
+}
+
+export async function markNotificationRead(
+  notificationId: number,
+): Promise<Notification> {
+  const body = await request<{ notification: Notification }>(
+    `/notifications/${notificationId}`,
+    { method: "PATCH" },
+  );
+  return body.notification;
+}
+
+export async function markAllNotificationsRead(): Promise<number> {
+  const body = await request<{ marked_read: number }>(
+    "/notifications/read-all",
+    { method: "POST" },
+  );
+  return body.marked_read;
+}
+
+export async function listInvitations(
+  organizationId: number,
+): Promise<Invitation[]> {
+  const body = await request<{ invitations: Invitation[] }>(
+    `/organizations/${organizationId}/invitations`,
+  );
+  return body.invitations;
+}
+
+export async function createInvitation(
+  organizationId: number,
+  email: string,
+  role: Exclude<Role, "owner">,
+): Promise<{ invitation: Invitation; accept_token?: string }> {
+  return request<{ invitation: Invitation; accept_token?: string }>(
+    `/organizations/${organizationId}/invitations`,
+    { method: "POST", body: JSON.stringify({ email, role }) },
+  );
+}
+
+export async function revokeInvitation(
+  organizationId: number,
+  invitationId: number,
+): Promise<void> {
+  await request<void>(
+    `/organizations/${organizationId}/invitations/${invitationId}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function acceptInvitation(
+  token: string,
+): Promise<{ organization_id: number }> {
+  return request<{ organization_id: number }>("/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function accountExportUrl(): string {
+  return `${API_BASE}/account/export`;
+}
+
+export async function deleteAccount(password: string): Promise<void> {
+  await request<void>("/account", {
+    method: "DELETE",
+    body: JSON.stringify({ password }),
+  });
 }
