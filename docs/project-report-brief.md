@@ -214,7 +214,7 @@ The active backend is a Flask application factory. `create_app()` in `backend/ap
 | `SECRET_KEY` | Flask session signing key | Development fallback (`development-only-change-me`). |
 | `DATABASE_URL` | SQLAlchemy database URI | `sqlite:///projectpulse.sqlite3` (resolves under `backend/instance/`). |
 | `APP_ENV` | `development`, `testing`, or `production` | `development`. |
-| `ALLOW_PUBLIC_SIGNUP` | Enables public registration | `false`. |
+| `ALLOW_PUBLIC_SIGNUP` | Enables public registration | `true`. |
 | `DEMO_PASSWORD` | Password assigned by `seed-demo` | `DemoPulse123!`. |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO`. |
 
@@ -271,7 +271,7 @@ The model is in `backend/app/models/user.py`. The migration is in `backend/migra
 - Unknown email and wrong password both return the same `401 invalid_credentials` message.
 - Inactive users cannot log in.
 - Duplicate registration returns `409 email_taken`.
-- Public registration is disabled by default and returns `403 registration_disabled` unless `ALLOW_PUBLIC_SIGNUP=true`.
+- Public registration is enabled by default and can be disabled with `ALLOW_PUBLIC_SIGNUP=false`; registration returns `403 registration_disabled` when disabled.
 - User responses contain `id`, `email`, and `display_name` only; password hashes are never returned.
 
 ### 8.3 Authentication endpoints

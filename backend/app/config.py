@@ -39,7 +39,7 @@ class Config:
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
 
-    ALLOW_PUBLIC_SIGNUP = env_bool("ALLOW_PUBLIC_SIGNUP", False)
+    ALLOW_PUBLIC_SIGNUP = env_bool("ALLOW_PUBLIC_SIGNUP", True)
     DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "DemoPulse123!")  # nosec B105 — demo-only seed account; disabled in production docs.
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 

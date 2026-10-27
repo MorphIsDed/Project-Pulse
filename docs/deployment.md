@@ -5,7 +5,7 @@
 Production uses SQLite on a persistent Docker volume. Caddy serves the built frontend, routes `/api/*` to the private Flask API, and obtains and renews HTTPS certificates for `APP_DOMAIN`. The API port is not exposed to the internet. Gunicorn writes access and error logs to the container's standard output/error streams.
 
 1. Point the domain's DNS record at the deployment host and allow inbound ports 80 and 443.
-2. Copy `.env.example` to `.env`. Set `APP_DOMAIN`, generate a unique secret with `python -c "import secrets; print(secrets.token_hex(32))"`, and paste it as `PROJECTPULSE_SECRET_KEY`. Production startup rejects missing, short, and placeholder secrets. Set `ALLOW_PUBLIC_SIGNUP=1` only if you want open registration; it is disabled by default.
+2. Copy `.env.example` to `.env`. Set `APP_DOMAIN`, generate a unique secret with `python -c "import secrets; print(secrets.token_hex(32))"`, and paste it as `PROJECTPULSE_SECRET_KEY`. Production startup rejects missing, short, and placeholder secrets. Public registration is enabled by default; set `ALLOW_PUBLIC_SIGNUP=0` to restrict account creation to administrators and invitations. New users must verify their email before signing in.
 3. Set `BACKUP_PATH` to a persistent, encrypted backup location. For production, use storage outside the application host and make the directory writable by container UID 10001.
 4. Start the production stack:
 
